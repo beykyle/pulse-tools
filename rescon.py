@@ -118,13 +118,13 @@ class ResolutionFitter:
         broadened = self.convolveWithGaussian(simulated , *popt)
 
         print("  a= " , popt[0]  , "+/- " , pcov[0][0] ," ",
-              ", b= " , popt[1]  , "+/- " , pcov[0][0] ," ",
-              ", c= " , popt[2]  , "+/- " , pcov[0][0] ," ")
+              ", b= " , popt[1]  , "+/- " , pcov[1][1] ," ",
+              ", c= " , popt[2]  , "+/- " , pcov[2][2] ," ")
 
-        return(self.energy , experimental , simulated , broadened , popt[0] , popt[1] , popt[2])
+        return(self.energy , experimental , simulated , broadened , popt[0] , popt[1] , popt[2] , pcov)
 
 def test():
-    energy   = np.linspace(0 , 2 , num=100)
+    energy   = np.linspace(0 , 2 , num=1000)
 
     exp = Experiment(energy)
     sim = Simulation(energy)
@@ -132,8 +132,20 @@ def test():
 
     experimental = exp.makeTestSpectrum([ 0.511 , 1.275 ] , 0.04 , 0.015 , 8)
     simulation   = sim.makeTestSpectrum([ 0.511 , 1.275 ] )
-    energy , experimental , simulation , broadened , a , b , c = res.runFit( experimental , simulation , 0.04 , 0.015 , 8)
+    energy , experimental , simulation , broadened , a , b , c , pcov = res.runFit( experimental , simulation , 0.04 , 0.015 , 8)
     visualizeConvolution( energy , experimental , simulation , broadened )
+    plotRes(energy , a , b , c , pcov)
+
+def plotRes(energy , a , b , c , pcov):
+    y = a + b*np.sqrt(energy + c*energy**2)
+    error =np.sqrt( pcov[0][0]**2 + (energy + c*energy**2) * pcov[1][1]**2 + energy**3 * b**2  / (4 * energy * c + 1) * pcov[2][2] )
+    plt.plot(energy , y  , "r--" , label="fitting result")
+    plt.fill_between(energy , y-error, y+error , label="error")
+    plt.legend()
+    plt.xlabel('Energy [MeV]')
+    plt.ylabel('FWHM [MeV]')
+    plt.show()
+
 
 def visualizeConvolution(energy , experimental , simulation , broadened ):
     plt.plot(energy , experimental  , label="experimental" )
