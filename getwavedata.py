@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-GetWaveData is a function that uses Waveform and Data loader, along with a 
+GetWaveData is a function that uses Waveform and Data loader, along with a
 configuration file to return basic waveform information.
 Created on Wed Dec  7 06:19:10 2016
 
-@author: Marc
+@author: Marc Ruch
 """
 
 import numpy as np
@@ -19,13 +19,13 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
     print("Starting at " + time.strftime('%H:%M:%S'))
     config = configparser.ConfigParser()
     config.read(configFileName)
-    
+
     # Setup data info
     # Directories
     data_directory = config['Directories']['data_directory']
     data_file_name = config['Directories']['data_file_name']
     pywaves_directory = config['Directories']['pywaves_directory']
-    
+
     # Digitizer
     dataFormatStr = config['Digitizer']['dataFormat']
     nSamples = int(config['Digitizer']['samples_per_waveform'])
@@ -47,12 +47,12 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
     tailIntegralStart = int(config['Pulse Processing']['tail_integral_start'])
     applyCRRC4 = bool(int(config['Pulse Processing']['apply_crrc4']))
     CRRC4Tau = float(config['Pulse Processing']['crrc4_shaping_time'])
-    
+
     # Load pywaves
     sys.path.extend([pywaves_directory])
     from dataloader import DataLoader
     from waveform import Waveform
-    
+
     # Pre-calc
     if dataFormatStr == 'DPP_MIXED':
         dataFormat = DataLoader.DAFCA_DPP_MIXED
@@ -66,7 +66,7 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
     chBufferSize = int(nFolders*nWaves*unevenFactor/nCh)
     VperLSB = dynamic_range_volts/(2**number_of_bits)
     fileTimeGap = 2**43 # Note: no more than 3 hours per measurement!
-    
+
     # Setup channel queues
     ph = np.zeros((nCh,chBufferSize))
     amp = np.zeros((nCh,chBufferSize))
@@ -79,13 +79,13 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
     cfd = np.zeros((nCh,chBufferSize))
     chCount = np.zeros(nCh, dtype=np.uint32)
     flags = np.zeros((nCh,chBufferSize), dtype=np.uint32)
-    
+
     # Setup data loader
     waveform = Waveform(np.zeros(nSamples), polarity, baselineOffset, nBaselineSamples)
-    
+
     # Queue up waves
     for f in range(startFolder, startFolder+nFolders):
-        print('Folder {}:'.format(f))    
+        print('Folder {}:'.format(f))
         fullDFileName = data_directory + directory_separator + str(f) + directory_separator + data_file_name
         datloader = DataLoader(fullDFileName,dataFormat,nSamples)
         nWavesInFile = datloader.GetNumberOfWavesInFile()
@@ -97,7 +97,7 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
         else:
             loadsInFile = nLoads
             lastLoad = nWavesPerLoad
-            
+
         for load in range(loadsInFile):
             if(load == loadsInFile-1):
                 wavesThisLoad = lastLoad
@@ -117,12 +117,12 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
                 cfd[ch][chCount[ch]] = waveform.GetCFDTime(cfdFraction)*ns_per_sample
                 ttt[ch][chCount[ch]] = waves[w]['TimeTag']
                 rms[ch][chCount[ch]] = waveform.GetRMSbls(nBaselineSamples)
-                if dataFormatStr == 'DPP_MIXED':                
+                if dataFormatStr == 'DPP_MIXED':
                     extras[ch][chCount[ch]] = waves[w]['Extras']
-                    fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] + 
+                    fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] +
                                                 ((waves[w]['Extras'] & 0xFFFF0000)
                                                 << 15)))*ns_per_sample
-#                    fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] + 
+#                    fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] +
 #                                                ((waves[w]['Extras'] & 0xFFFF0000)
 #                                                << 15)) + fileTimeGap*f)*ns_per_sample
                 chCount[ch] += 1

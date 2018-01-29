@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+
+@author: Marc Ruch
+"""
+
 import numpy as np
 import scipy.signal as signal
 from numpy import mean, sqrt, square
@@ -48,27 +54,27 @@ class Waveform:
         if self.badPulse:
             return -1
         T = samplingTime
-        
+
         # Pre-compute
         a = 1/shapingTime
         alpha = np.exp(-T/shapingTime)
-        b = np.array([0, 
-                      alpha*T**3*(4-a*T), 
-                      alpha**2*T**3*(12-11*a*T), 
-                      alpha**3*T**3*(-12-11*a*T), 
+        b = np.array([0,
+                      alpha*T**3*(4-a*T),
+                      alpha**2*T**3*(12-11*a*T),
+                      alpha**3*T**3*(-12-11*a*T),
                      alpha**4*T**3*(-4-a*T)])
-        a = np.array([24, -120*alpha, 240*alpha**2, 
+        a = np.array([24, -120*alpha, 240*alpha**2,
                       -240*alpha**3, 120*alpha**4, -24*alpha**5])
         self.blsSamples = signal.lfilter(b, a, self.blsSamples)
         self.maxIndex = np.argmax(self.blsSamples)
-        
+
     def GetMax(self):
         if not self.baselined:
             self.BaselineSubtract()
         if self.badPulse:
             return -1
         return  self.blsSamples[self.maxIndex]
-    
+
     def GetRMSbls(self,nBaselineSamples):
         if not self.baselined:
             self.BaselineSubtract()
@@ -93,8 +99,8 @@ class Waveform:
             return -1
         zeroCrossing = negativeSamples[0]+self.maxIndex
         return np.sum(self.blsSamples[self.maxIndex-self.baselineOffset:zeroCrossing])
-        
-        
+
+
     def GetCFDTime(self, CFDFraction, movingAverageLength=1):
         if not self.baselined:
             self.BaselineSubtract()

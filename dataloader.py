@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+
+@author: Marc Ruch
+"""
+
 import numpy as np
 import os
 
@@ -5,7 +11,7 @@ class DataLoader:
     DAFCA_STD = 0
     DAFCA_DPP_MIXED = 1
     DAFCA_DPP_LIST = 2
-    
+
     def __init__(self, fileName, dataType, numSamples):#num Samples is the number of samples in a waveform, not number of waves
         self.fileName = fileName
         self.dataType = dataType
@@ -38,16 +44,16 @@ class DataLoader:
                                        ('TimeTag',(np.int32,1)),
                                        ('Extras',(np.int32,1))])
         self.location = 0
-    
+
     def GetNumberOfWavesInFile(self):
         return int(os.path.getsize(self.fileName) / self.blockType.itemsize)
-        
+
     def LoadWaves(self, numWaves):
         """Loads numWaves waveforms. If numWaves == -1, loads all waveforms in the file"""
         fid = open(self.fileName, "rb")
         fid.seek(self.location, os.SEEK_SET)
         self.location += self.blockType.itemsize * numWaves
         return np.fromfile(fid, dtype = self.blockType, count=numWaves)
-    
+
     def Rewind(self):
         self.location = 0
