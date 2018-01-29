@@ -35,8 +35,10 @@ class Experiment:
         spectrum = np.zeros( len(self.energy) )
         for i , ch in enumerate(spectrum):
             spectrum[i] += 0.6*np.random.rand()
-            if self.energy[i] < comptonErg:
+            if self.energy[i] < comptonErg[0]:
                 spectrum[i] += 20 * self.energy[i]**2 -  10 * self.energy[i] + 6
+            if self.energy[i] < comptonErg[1]:
+                spectrum[i] += 10 * (self.energy[i] - comptonErg[0])**2 -  5 * (self.energy[i] - comptonErg[0]) + 3
 
         res = ResolutionFitter(self.energy)
         spectrum = res.convolveWithGaussian( spectrum , a , b , c ) + 0.6 * np.random.rand(len(self.energy))
@@ -51,12 +53,14 @@ class Simulation:
         #find spectrum
         return(spectrum)
 
-    def makeTestSpectrum(self , comptonErg , a , b , c):
+    def makeTestSpectrum(self , comptonErg ):
         spectrum = np.zeros( len(self.energy) )
         for i , ch in enumerate(spectrum):
             spectrum[i] += 0.2*np.random.rand()
-            if self.energy[i] < comptonErg:
+            if self.energy[i] < comptonErg[0]:
                 spectrum[i] += 20 * self.energy[i]**2 -  10 * self.energy[i] + 6
+            if self.energy[i] < comptonErg[1]:
+                spectrum[i] += 10 * (self.energy[i] - comptonErg[0])**2 -  5 * (self.energy[i] - comptonErg[0])+ 3
 
         return(spectrum)
 
@@ -82,7 +86,6 @@ class ResolutionFitter:
 
         return( convolved[0:n] )
 
-
     def findComptonEdge(self , spec):
         diff1 = np.diff(spec)
         k = np.where(diff1 == diff1.min())
@@ -104,7 +107,8 @@ class ResolutionFitter:
         return(experimental[0:stop] , simulated[0:stop])
 
     def runFit(self , experimental , simulated , a0 , b0 , c0):
-        experimental , simulated = self.cutBaseline(experimental , simulated)
+        if self.lines == 1:
+            experimental , simulated = self.cutBaseline(experimental , simulated)
 
         popt , pcov = fit(self.convolveWithGaussian , simulated , experimental ,
                             p0 = (a0 , b0 , c0) ,
@@ -124,10 +128,10 @@ def test():
 
     exp = Experiment(energy)
     sim = Simulation(energy)
-    res = ResolutionFitter(energy , loud=True)
+    res = ResolutionFitter(energy , loud=True , lines=2)
 
-    experimental = exp.makeTestSpectrum(0.662 , 0.04 , 0.015 , 8)
-    simulation   = sim.makeTestSpectrum(0.662 , 0.04 , 0.015 , 8)
+    experimental = exp.makeTestSpectrum([ 0.511 , 1.275 ] , 0.04 , 0.015 , 8)
+    simulation   = sim.makeTestSpectrum([ 0.511 , 1.275 ] )
     energy , experimental , simulation , broadened , a , b , c = res.runFit( experimental , simulation , 0.04 , 0.015 , 8)
     visualizeConvolution( energy , experimental , simulation , broadened )
 
