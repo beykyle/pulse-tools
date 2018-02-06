@@ -25,8 +25,18 @@ class Experiment:
         self.energy = energy
 
     def readFromFile(self , config ):
-        wavedata = getwavedata.GetWaveData(config)
+        chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms = getwavedata.GetWaveData(config)
         spectrum  = np.zeros(len(self.energy))
+        for i , channel in enumerate(chCount):
+            print("looking at channel: " , i)
+            #currentInt = totalInt[i][:int(totalInt[i].size/2)]
+            hist , edges = np.histogram(ph[i][:channel] , bins=100)
+            #plt.plot(np.linspace(0,1,ph[i][:channel].size)  , ph[i][:channel])
+            plt.hist(hist , edges)
+            plt.xlabel("Pulse Height [V]")
+            plt.ylabel("Counts")
+            plt.show()
+
         #find spectrum
         #convert to LO
         return(spectrum)
@@ -138,7 +148,7 @@ def test():
 
 def plotRes(energy , a , b , c , pcov):
     y = a + b*np.sqrt(energy + c*energy**2)
-    error =np.sqrt( pcov[0][0]**2 + (energy + c*energy**2) * pcov[1][1]**2 + energy**3 * b**2  / (4 * energy * c + 1) * pcov[2][2] )
+    error = np.sqrt( pcov[0][0]**2 + (energy + c*energy**2) * pcov[1][1]**2 + energy**3 * b**2  / (4 * energy * c + 1) * pcov[2][2] )
     plt.plot(energy , y  , "r--" , label="fitting result")
     plt.fill_between(energy , y-error, y+error , label="error")
     plt.legend()
@@ -158,6 +168,10 @@ def visualizeConvolution(energy , experimental , simulation , broadened ):
     plt.show()
 
 if __name__ == '__main__':
-    test()
+    fi  =sys.argv[1]
+    energy   = np.linspace(0 , 2 , num=1000)
+    exp = Experiment(energy)
+    wavedata = exp.readFromFile(fi)
+    #print(wavedata)
 
 
