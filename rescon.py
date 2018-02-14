@@ -8,8 +8,8 @@ rescon.py: Code to find the energy resolution of an organic scintillator by iter
 import numpy as np
 import sys
 import matplotlib.pyplot as plt
-from matplotlib.widgets  import RectangleSelector
-from matplotlib.patches import Rectangle
+from math import ceil
+import glob, os
 import waveform
 import dataloader
 import getwavedata
@@ -36,130 +36,61 @@ def booleanize(value):
         return False
     raise TypeError("Cannot booleanize ambiguous value '%s'" % value)
 
-def line_select_callback(eclick, erelease):
-    x1, y1 = eclick.xdata, eclick.ydata
-    x2, y2 = erelease.xdata, erelease.ydata
-    rect = plt.Rectangle( (min(x1,x2),min(y1,y2)), np.abs(x1-x2), np.abs(y1-y2) )
-    ax.add_patch(rect)
-
-class DraggableRectangle:
-    lock = None  # only one can be animated at a time
-    def __init__(self ):
-        self.rect = Rectangle((0,0) ,1 , 1 )
-        self.press = None
-        self.background = None
-
-    def connect(self):
-        'connect to all the events we need'
-        self.cidpress = self.rect.figure.canvas.mpl_connect(
-            'button_press_event', self.on_press)
-        self.cidrelease = self.rect.figure.canvas.mpl_connect(
-            'button_release_event', self.on_release)
-        self.cidmotion = self.rect.figure.canvas.mpl_connect(
-            'motion_notify_event', self.on_motion)
-
-    def on_press(self, event):
-        'on button press we will see if the mouse is over us and store some data'
-        if event.inaxes != self.rect.axes: return
-        if DraggableRectangle.lock is not None: return
-        contains, attrd = self.rect.contains(event)
-        if not contains: return
-        print('event contains', self.rect.xy)
-        x0, y0 = self.rect.xy
-        self.press = x0, y0, event.xdata, event.ydata
-        DraggableRectangle.lock = self
-
-        # draw everything but the selected rectangle and store the pixel buffer
-        canvas = self.rect.figure.canvas
-        axes = self.rect.axes
-        self.rect.set_animated(True)
-        canvas.draw()
-        self.background = canvas.copy_from_bbox(self.rect.axes.bbox)
-
-        # now redraw just the rectangle
-        axes.draw_artist(self.rect)
-
-        # and blit just the redrawn area
-        canvas.blit(axes.bbox)
-
-    def on_motion(self, event):
-        'on motion we will move the rect if the mouse is over us'
-        if DraggableRectangle.lock is not self:
-            return
-        if event.inaxes != self.rect.axes: return
-        x0, y0, xpress, ypress = self.press
-        dx = event.xdata - xpress
-        dy = event.ydata - ypress
-        self.rect.set_x(x0+dx)
-        self.rect.set_y(y0+dy)
-
-        canvas = self.rect.figure.canvas
-        axes = self.rect.axes
-        # restore the background region
-        canvas.restore_region(self.background)
-
-        # redraw just the current rectangle
-        axes.draw_artist(self.rect)
-
-        # blit just the redrawn area
-        canvas.blit(axes.bbox)
-
-    def on_release(self, event):
-        'on release we reset the press data'
-        if DraggableRectangle.lock is not self:
-            return
-
-        self.press = None
-        DraggableRectangle.lock = None
-
-        # turn off the rect animation property and reset the background
-        self.rect.set_animated(False)
-        self.background = None
-
-        # redraw the full figure
-        self.rect.figure.canvas.draw()
-
-    def disconnect(self):
-        'disconnect all the stored connection ids'
-        self.rect.figure.canvas.mpl_disconnect(self.cidpress)
-        self.rect.figure.canvas.mpl_disconnect(self.cidrelease)
-        self.rect.figure.canvas.mpl_disconnect(self.cidmotion)
-
 class Experiment:
     def __init__(self , lines , bins, *args , **kwargs):
         if kwargs is not None:
                 for key, value in kwargs.items():
-                    if key == "readSpec":
-                        self.readSpec = booleanize(value)
+                    setattr(self , key , booleanize(value))
 
         self.bins  = int(bins)
         self.lines = lines
+        self.loud = True
 
     def run(self , config):
-        if(hasattr(self , 'readSpec')):
-            if(self.readSpec == True):
-                spec = []
-                volts = []
-                #iterate through every file with spec*.tmp
-                #read each channel of spec and volts
-        else:
+        spec = []
+        volts = []
+
+        if(self.readSpec == False):
             volts , spec = self.readFromFile(config)
-            self.writeSpec(volts , spec)
+            if(self.writeSpec == True):
+                self.writeSpec(volts , spec)
+        if(self.readSpec == True):
+            for fname in glob.glob('./spec*.tmp'):
+                bins , hist = self.specReader(fname)
+                spec.append(  np.array(hist) )
+                volts.append( np.append( [0] , np.array(bins) ) )
 
         edges = []
-        energy = []
+        energies = []
         for i , (bins , hist) in enumerate(zip(volts , spec)):
-            edges.append(self.findComptonEdges(bins , hist))
-            energy.append(bins * 0.478 / edges[i])
+            edges = self.findComptonEdges(bins , hist)
+            energy = self.calibrate(bins , edges)
+            energies.append(energy[1:])
+            plt.plot(energy[1:], hist)
+            #plt.title(detector[i]) TODO channel to detector mapping
+            plt.xlabel("Light Output [MeV]")
+            plt.ylabel("Counts")
+            plt.show()
+        return(energies , spec)
 
-        return(energy , spec)
+    def specReader(self , fname):
+        print("Reading spectrum from " + fname)
+        bins = []
+        hist = []
+        with open(fname , "r") as inf:
+            for line in inf.readlines():
+                line = line.rstrip("\r\n").split(",")
+                bins.append(float(line[0]))
+                hist.append(float(line[1]))
+        return(bins , hist)
 
     def writeSpec(self , volts, spec):
-        print("writing spectrum to spec.tmp, os if something goes wrong you don't have to read through the waves again.")
         for i , (bins , hist) in enumerate(zip(volts , spec)):
             fname =  "spec_" + str(i)+"_.tmp"
-            np.savetxt(fname, np.c_[volts , spec] , delimiter="," , newline="\r\n" , fmt='%1.6e')
-
+            print("writing spectrum to " + fname)
+            with open(fname ,'w') as out:
+                for b , h in zip(bins , hist):
+                    out.write('{:1.5f}'.format(b) + "," + '{:1.8E}'.format(h) + '\r\n' )
 
     def readFromFile(self , config ):
         spec = []
@@ -169,50 +100,115 @@ class Experiment:
         print("\n \n Read pulse integrated spectra from " + str(self.numChannels) + " channels. \n")
 
         for chan , bar in zip( range(0 , len(chCount) , 2) , [1,2,3,4,5,6,7,8] ):
-             hist , bins = np.histogram(totalInt[chan+1][:chCount[chan+1]] + totalInt[chan][:chCount[chan]]  , bins=self.bins )
-             spec.append(hist)
-             volts.append(bins)
-             #plt.hist( totalInt[chan][:chCount[chan]] , bins=self.bins, label='channel: '+ str(chan) , histtype='step')
+            #implement arbitrary channel mapping
+            integral = totalInt[chan+1][:chCount[chan+1]] + totalInt[chan][:chCount[chan]]
+            hist , bins = np.histogram(integral  , 200 )
+            lastEdge = self.findLastEdge(bins , hist)
+            integral = [x for x in integral if x <= bins[lastEdge] ]
+            hist , bins = np.histogram( integral, self.bins )
+            spec.append(hist)
+            volts.append(bins)
 
         print("calibrating spectrum energy lines: " +  ' , '.join(str(e) for e in self.lines) + " MeV")
         return(volts , spec)
 
+    def calibrate(self , bins , edges):
+        if (len(self.lines) != len(edges)):
+            print("Unable to find all the edges specified! Will just use first edge!")
+            return(bins * (lines[0] / edges[0]) )
+        elif len(self.lines) == 1 and len(edges) == 1:
+            return(bins * (lines[0] / edges[0]) )
+        elif len(self.lines) == 2 and len(edges) == 2:
+            b = (self.lines[1] - self.lines[0] ) / (edges[1] - edges[0])
+            a = self.lines[0] - b * edges[0]
+            return(a + bins * b)
+        else:
+            # system is overconstrained
+            # find a,b with least squares fitting
+            # TODO
+            return(bins * (lines[0] / edges[0]) )
 
-    def findComptonEdges(self , bins , hist):
+    def findLastEdge(self , bins , hist):
+        nhist = hist/ max(hist)
+        diff1 = savgol( np.diff(nhist) , 15 , 3)
+        #plt.plot(bins[1:-1] , diff1)
+        #plt.plot(bins[1:]   , nhist)
+        found = False
+        lastEdge = len(hist) - 10
+        for i , val in reversed(list(enumerate(hist))):
+            if i < len(hist) - 10:
+                if (found == False and sum( diff1[i-5:i]) < 0 and sum(nhist[i-5:i]) > 0.008 ):
+                    found = True
+                    lastEdge = i
+        return(lastEdge)
+
+    def findComptonEdges(self , bins , hist ):
         print("Finding Compton Edges")
-        ce = [1]
-        nhist = savgol( (hist / hist.max())   , 11 , 3 )
-        diff1 = savgol(  np.diff(nhist)       , 7  , 3 )
-        diff2 = savgol(  np.diff(diff1)       , 7  , 3 )
+        splineWidth = int(ceil(self.bins/15))
+        if splineWidth%2 == 0:
+            splineWidth = splineWidth + 1
+        print(splineWidth)
+        nhist = savgol( (hist / hist.max())                   , splineWidth      , 3 )
+        diff1 = savgol(  np.diff(hist/hist.max())             , splineWidth      , 3 )
+        diff2 = savgol(  np.diff(np.diff(hist/hist.max() ))   , splineWidth*2+1  , 3 )
         #k  = np.where( diff1 == diff1.min() )
         #k2 = np.where( diff2 == diff2.min() )
 
-        peakid  = peaks( nhist , np.arange(1,10) )
-        peakid2 = peaks( diff2 , np.arange(1,10) )
+        peakw = int(ceil(self.bins/20))
+        peakid  = peaks( nhist ,  [peakw , peakw + 1 , peakw+2] )
+        peakid2 = peaks( diff2 ,  [peakw , peakw + 1 , peakw+2] )
+        if len(peakid) < 3 or len(peakid2) < 3:
+            raise NotImplementedError("Compton edges couldn't be found, and manual selection hasn't been implemented. Try again with more data!")
+            return(0)
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
+        ax.plot( bins[1:]   , nhist            , label="smoothed spectrum"       )
 
-        ax.plot( bins[1:]   , nhist            , label="spectrum"       )
-        ax.plot( bins[1:-2] , diff2            , label="2nd derivative" )
-        for pk , pk2 in zip(peakid , peakid2):
-            ax.plot( bins[pk]    , nhist[pk-1]  , '*b' , label="peak"   )
-            ax.plot( bins[pk2]   , diff2[pk2+1] , '*g' , label="inflection point"   )
+        #find first line
+        print("Looking for " + str(self.lines[0]) + " MeV Compton edge.")
+        found = False
+        for pk in peakid2:
+            if found == False and pk > peakid[1]:
+                stopEdge = pk
+
+        intermediate =  nhist[peakid[1]:stopEdge] - 0.8 * nhist[peakid[1]]
+        k = peakid[1] + np.where( intermediate**2 == (intermediate**2).min() )
+        if (self.loud == True):
+            ax.plot( bins[k]    , nhist[k-1]  , '*r' , label="Compton Edge" )
+        print("Got it!")
+
+        for i, line in reversed(list(enumerate(self.lines))):
+            if( i == 0 ):
+                pass
+            else:
+                print("Looking for " + str(line) + " MeV Compton edge.")
+                lastEdge = self.findLastEdge(bins , hist)
+
+                try:
+                    peak2 = peakid[np.where(peakid < lastEdge)].max()
+                except ValueError:
+                    raise NotImplementedError("Compton edges couldn't be found, and manual selection hasn't been implemented. Try again with more data!")
+                    return(0)
+
+                intermediate = nhist[peak2:lastEdge] - 0.8 * nhist[peak2]
+                k2 = peak2 + np.where( intermediate**2 == (intermediate**2).min() )
+                if (self.loud == True):
+                    ax.plot( bins[k2]    , nhist[k2-1]  , '*r' , label="Compton Edge" )
+                nhist = nhist[:peak2]
+                print("Got it!")
+
+        plt.xlabel("Pulse Integral [V ns]")
+        plt.ylabel("Relative Frequency")
 
         plt.legend()
-
-        for line in self.lines:
-            print("Looking for " + str(line) + " MeV Compton edge.")
-
-        rs = RectangleSelector(ax, line_select_callback,
-                       drawtype='box', useblit=False, button=[1],
-                       minspanx=5, minspany=5, spancoords='pixels',
-                       interactive=True)
-
         plt.show()
-
-        return(ce)
-
+        correct = input("Are the compton edges marked correctly? [yes/no]")
+        if "y" in correct:
+            return( [ bins[k[0][0]]  , bins[k2[0][0]] ] )
+        else:
+            raise NotImplementedError("Sorry! We haven't added manually selected compton edges yet...")
+            return(0)
 
     def makeTestSpectrum(self , comptonErg , a , b , c):
         spectrum = np.zeros( len(self.energy) )
@@ -348,8 +344,13 @@ if __name__ == '__main__':
     else:
         lines = float(input("Enter gamma line in MeV: "))
 
-    exp = Experiment(lines , bins)
-    energy , spec = exp.run(fi)
+    exp = Experiment(lines , bins , loud=True , readSpec=True , writeSpec=False)
+    energies , specs = exp.run(fi)
+    for i , (energy , spec) in enumerate(zip(energies , specs)):
+        pass
+        #create a simulated spectrum by reading from a file for the correct detector
+        #run convolution
+        #print results
 
 
 
