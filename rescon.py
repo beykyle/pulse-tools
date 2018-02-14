@@ -13,6 +13,7 @@ import glob, os
 import waveform
 import dataloader
 import getwavedata
+import configparser
 from scipy.ndimage.filters import gaussian_filter1d as gfilter
 from scipy.optimize import curve_fit as fit
 from scipy.signal import savgol_filter as savgol
@@ -46,32 +47,40 @@ class Experiment:
         self.lines = lines
         self.loud = True
 
-    def run(self , config):
+    def getData(self , detectors , keys):
         spec = []
         volts = []
 
         if(self.readSpec == False):
-            volts , spec = self.readFromFile(config)
+            print("getting experimental data from raw wave data")
+            volts , spec = self.readFromFile(self.WaveConfig , detectors , keys)
             if(self.writeSpec == True):
-                self.writeSpec(volts , spec)
-        if(self.readSpec == True):
-            for fname in glob.glob('./spec*.tmp'):
-                bins , hist = self.specReader(fname)
+                self.writeSpec(volts , spec , keys)
+        elif(self.readSpec == True):
+            print("getting experimental data from spectra files")
+            for key in keys:
+                bins , hist = self.specReader(detectors[key].expFilename)
                 spec.append(  np.array(hist) )
                 volts.append( np.append( [0] , np.array(bins) ) )
 
         edges = []
         energies = []
         for i , (bins , hist) in enumerate(zip(volts , spec)):
-            edges = self.findComptonEdges(bins , hist)
+            print("\n Now calibrating " + keys[i])
+            edges = self.findComptonEdges(bins , hist , keys[i])
             energy = self.calibrate(bins , edges)
             energies.append(energy[1:])
             plt.plot(energy[1:], hist)
-            #plt.title(detector[i]) TODO channel to detector mapping
+            plt.title(keys[i])
             plt.xlabel("Light Output [MeV]")
             plt.ylabel("Counts")
             plt.show()
-        return(energies , spec)
+
+            # set experimental values in detector object
+            detectors[keys[i]].setExpSpec(hist)
+            detectors[keys[i]].setExpEnergy(energy)
+
+        return(detectors)
 
     def specReader(self , fname):
         print("Reading spectrum from " + fname)
@@ -84,24 +93,26 @@ class Experiment:
                 hist.append(float(line[1]))
         return(bins , hist)
 
-    def writeSpec(self , volts, spec):
+    def writeSpec(self , volts, spec , keys):
         for i , (bins , hist) in enumerate(zip(volts , spec)):
-            fname =  "spec_" + str(i)+"_.tmp"
+            fname =  "./spec_" + keys[i]+"_.tmp"
             print("writing spectrum to " + fname)
             with open(fname ,'w') as out:
                 for b , h in zip(bins , hist):
                     out.write('{:1.5f}'.format(b) + "," + '{:1.8E}'.format(h) + '\r\n' )
 
-    def readFromFile(self , config ):
+    def readFromFile(self , config  , detectors , keys):
         spec = []
         volts = []
         chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms = getwavedata.GetWaveData(config)
         self.numChannels = len(chCount)
         print("\n \n Read pulse integrated spectra from " + str(self.numChannels) + " channels. \n")
 
-        for chan , bar in zip( range(0 , len(chCount) , 2) , [1,2,3,4,5,6,7,8] ):
-            #implement arbitrary channel mapping
-            integral = totalInt[chan+1][:chCount[chan+1]] + totalInt[chan][:chCount[chan]]
+        for key in keys:
+            integral = np.zeros( chCount[ detectors[key].channels[0] ] )
+            for channel in detectors[key].channels:
+                integral =  integral + totalInt[channel][:chCount[channel]]
+
             hist , bins = np.histogram(integral  , 200 )
             lastEdge = self.findLastEdge(bins , hist)
             integral = [x for x in integral if x <= bins[lastEdge] ]
@@ -109,7 +120,16 @@ class Experiment:
             spec.append(hist)
             volts.append(bins)
 
-        print("calibrating spectrum energy lines: " +  ' , '.join(str(e) for e in self.lines) + " MeV")
+        #for chan , bar in zip( range(0 , len(chCount) , 2) , [1,2,3,4,5,6,7,8] ):
+        #    #implement arbitrary channel mapping
+        #    integral = totalInt[chan+1][:chCount[chan+1]] + totalInt[chan][:chCount[chan]]
+        #    hist , bins = np.histogram(integral  , 200 )
+        #    lastEdge = self.findLastEdge(bins , hist)
+        #    integral = [x for x in integral if x <= bins[lastEdge] ]
+        #    hist , bins = np.histogram( integral, self.bins )
+        #    spec.append(hist)
+        #    volts.append(bins)
+
         return(volts , spec)
 
     def calibrate(self , bins , edges):
@@ -142,12 +162,12 @@ class Experiment:
                     lastEdge = i
         return(lastEdge)
 
-    def findComptonEdges(self , bins , hist ):
+    def findComptonEdges(self , bins , hist  , key):
+        print("calibrating spectrum energy lines: " +  ' , '.join(str(e) for e in self.lines) + " MeV")
         print("Finding Compton Edges")
         splineWidth = int(ceil(self.bins/15))
         if splineWidth%2 == 0:
             splineWidth = splineWidth + 1
-        print(splineWidth)
         nhist = savgol( (hist / hist.max())                   , splineWidth      , 3 )
         diff1 = savgol(  np.diff(hist/hist.max())             , splineWidth      , 3 )
         diff2 = savgol(  np.diff(np.diff(hist/hist.max() ))   , splineWidth*2+1  , 3 )
@@ -200,6 +220,7 @@ class Experiment:
 
         plt.xlabel("Pulse Integral [V ns]")
         plt.ylabel("Relative Frequency")
+        plt.title(key)
 
         plt.legend()
         plt.show()
@@ -244,8 +265,7 @@ class Simulation:
         return(spectrum)
 
 class ResolutionFitter:
-    def __init__(self , energy , **kwargs):
-        self.energy = energy
+    def __init__(self ,  **kwargs):
         for key , value in kwargs.items():
             setattr(self , key  , value)
 
@@ -265,30 +285,7 @@ class ResolutionFitter:
 
         return( convolved[0:n] )
 
-    def findComptonEdge(self , spec):
-        diff1 = np.diff(spec)
-        k = np.where(diff1 == diff1.min())
-        if self.loud == True:
-            plt.plot(self.energy[1:-1] , spec[1:-1]      , label="spectrum"       )
-            plt.plot(self.energy[1:]   , diff1           , label="1st derivative" )
-            plt.plot(self.energy[k]    , spec[k] , '*r'  , label="Compton Edge"   )
-            plt.legend()
-            plt.show()
-
-        return(k[0][0])
-
-    def cutBaseline(self , experimental , simulated ):
-        n = len(self.energy)
-        k = self.findComptonEdge(simulated)
-        stop = n - n // 3 + k // 3
-
-        self.energy = self.energy[0:stop]
-        return(experimental[0:stop] , simulated[0:stop])
-
     def runFit(self , experimental , simulated , a0 , b0 , c0):
-        if self.lines == 1:
-            experimental , simulated = self.cutBaseline(experimental , simulated)
-
         popt , pcov = fit(self.convolveWithGaussian , simulated , experimental ,
                             p0 = (a0 , b0 , c0) ,
                             bounds = ( (0 , 0 , 0 ) , (1 , 1 , np.inf) )
@@ -300,7 +297,46 @@ class ResolutionFitter:
               ", b= " , popt[1]  , "+/- " , pcov[1][1] ," ",
               ", c= " , popt[2]  , "+/- " , pcov[2][2] ," ")
 
-        return(self.energy , experimental , simulated , broadened , popt[0] , popt[1] , popt[2] , pcov)
+        return(broadened , popt , pcov)
+
+    def runAll(self , detectors):
+        for key , value in detectors.items:
+            broadened , (a,b,c) , covariance =  self.runFit(value.energy , value.simSpec , 0.04 , 0.015 , 8)
+            visualizeConvolustion(value.energy , value.expSpec , value.simSpec , broadened)
+            plotRes(value.energy , a , b ,c  , covariance)
+            #output to a file like 'detector: a +/- stdev, b +/- stddev, c +/- stddev'
+
+        return(detectors)
+
+class Detector:
+    def __init__(self , simFilename ):
+        self.simFilename = simFilename
+
+    def setExpFilename(self , expFilename):
+        self.expFilename = expFilename
+
+    def setExpSpec(self  , expSpec):
+        self.expSpec = expSpec
+
+    def setExpEnergy(self  , energy):
+        self.expEnergy = energy
+
+    def setSimSpec(self , energy , simSpec):
+        self.simSpec = simSpec
+        self.simEnergy = energy
+
+    def setChannels(self , channels):
+        self.channels = channels
+
+    def interpolate(self):
+        #interpolate energy and expSpec to match binning of simulated spectrum
+        pass
+
+    def setValues(a , b, c , pcov):
+        self.a = a
+        self.b = b
+        self.c = c
+        self.covariance = pcov
 
 def test():
     energy   = np.linspace(0 , 2 , num=1000)
@@ -338,19 +374,70 @@ def visualizeConvolution(energy , experimental , simulation , broadened ):
 
 if __name__ == '__main__':
     fi     = sys.argv[1]
-    bins   = sys.argv[2]
-    if(len(sys.argv) > 3):
-        lines = [float(x) for x in sys.argv[3:]]
-    else:
-        lines = float(input("Enter gamma line in MeV: "))
+    conf = configparser.ConfigParser()
+    conf.read(fi)
 
-    exp = Experiment(lines , bins , loud=True , readSpec=True , writeSpec=False)
-    energies , specs = exp.run(fi)
-    for i , (energy , spec) in enumerate(zip(energies , specs)):
-        pass
-        #create a simulated spectrum by reading from a file for the correct detector
-        #run convolution
-        #print results
+    # set up dict of detectors with name as key and object as value, constructing with simulation data
+    detectors = {}
+    keys = []
+
+    # set up simulated spectra read in
+    if 'Sim Data' in conf:
+        for (key , value) in conf.items('Sim Data'):
+            keys.append(key)
+            detectors[key] = Detector(value)
+    else:
+        print("No Sim Data section in config file! exiting.")
+        sys.exit()
+
+    # set up experimental spectra read in
+    if 'Spec Data' in conf:
+        for (key , value) in conf.items('Spec Data'):
+            if key in detectors:
+                detectors[key].setExpFilename(value)
+            else:
+                print("Could not find detector " + key + " in [Sim Data]")
+                print("Detector names must match")
+                sys.exit()
+    else:
+        print("No Spec Data section in config file! Can't use spectral data")
+        sys.exit()
+
+    # general setup
+    if 'General' in conf:
+        write    = booleanize(conf['General']['write'])
+        numBins  = int(conf['General']['bin'])
+        lines    = [ float(x.strip()) for x in conf['General']['lines'].split(",") ]
+
+        if 'raw_data_conf' in conf['General']:
+            waveConfig = conf['General']['raw_data_conf']
+            # set up detector mapping, set detector channels
+            if 'Detector Mapping' in conf:
+                for (key , value) in conf.items('Detector Mapping'):
+                    channels = [ float(x.strip()) for x in value.split(",") ]
+                    if key in detectors:
+                        detectors[key].setChannels(channels)
+                    else:
+                        print("Could not find detector " + key + " in [Sim Data]")
+                        print("Detector names must match")
+                        sys.exit()
+            else:
+                print("No Detector Mapping section in config file! Can't use raw wave data.")
+                sys.exit()
+
+            exp = Experiment(lines , bins=numBins , loud=True , readSpec=False , WaveConfig=waveConfig, writeSpec=write)
+        else:
+            exp = Experiment(lines , bins=numBins , loud=True , readSpec=True , writeSpec=write)
+    else:
+        print("No General section in config file! exiting.")
+        sys.exit()
+
+
+    detectors  = exp.getData(detectors , keys)
+    # detectors =  exp.run(detectors) to get an array of experimental energies, and add the corresponding experimental spectra to each detector
+
+    #res = ResolutionFitter()
+    #detectors = res.runAll(detectors)
 
 
 
