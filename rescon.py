@@ -41,7 +41,10 @@ class Experiment:
     def __init__(self , lines , bins, *args , **kwargs):
         if kwargs is not None:
                 for key, value in kwargs.items():
-                    setattr(self , key , booleanize(value))
+                    if key == "loud" or key == "readSpec":
+                        setattr(self , key , booleanize(value))
+                    else:
+                        setattr(self , key , value)
 
         self.bins  = int(bins)
         self.lines = lines
@@ -70,10 +73,16 @@ class Experiment:
             edges = self.findComptonEdges(bins , hist , keys[i])
             energy = self.calibrate(bins , edges)
             energies.append(energy[1:])
+
             plt.plot(energy[1:], hist)
             plt.title(keys[i])
             plt.xlabel("Light Output [MeV]")
             plt.ylabel("Counts")
+            for line in self.lines:
+                lab = str(line) + " MeV"
+                plt.plot([line , line] , [0 , hist.max()] , '--' , label=lab)
+
+            plt.legend()
             plt.show()
 
             # set experimental values in detector object
@@ -109,9 +118,18 @@ class Experiment:
         print("\n \n Read pulse integrated spectra from " + str(self.numChannels) + " channels. \n")
 
         for key in keys:
+            print(key + " maps to channels " +  ' , '.join(str(e) for e in detectors[key].channels))
             integral = np.zeros( chCount[ detectors[key].channels[0] ] )
             for channel in detectors[key].channels:
-                integral =  integral + totalInt[channel][:chCount[channel]]
+                try:
+                    integral =  integral + totalInt[channel][:chCount[channel]]
+                except ValueError:
+                    print("Detector " + key + " has channels that don't match up!")
+                    print("Channels mapping to the same detector must physically read out from the same detector")
+                    print("In this case, the number of pulses in channel " + str(channel) + " did not match the number of pulses in one of the other "
+                            + str(len(detectors[key].channels) - 1) + " channels mapped to Detector " + key)
+                    sys.exit()
+
 
             hist , bins = np.histogram(integral  , 200 )
             lastEdge = self.findLastEdge(bins , hist)
@@ -405,7 +423,7 @@ if __name__ == '__main__':
 
     # general setup
     if 'General' in conf:
-        write    = booleanize(conf['General']['write'])
+        write    = booleanize( conf['General']['write'].strip() )
         numBins  = int(conf['General']['bin'])
         lines    = [ float(x.strip()) for x in conf['General']['lines'].split(",") ]
 
@@ -414,7 +432,7 @@ if __name__ == '__main__':
             # set up detector mapping, set detector channels
             if 'Detector Mapping' in conf:
                 for (key , value) in conf.items('Detector Mapping'):
-                    channels = [ float(x.strip()) for x in value.split(",") ]
+                    channels = [ int(x.strip()) for x in value.split(",") ]
                     if key in detectors:
                         detectors[key].setChannels(channels)
                     else:
@@ -432,9 +450,20 @@ if __name__ == '__main__':
         print("No General section in config file! exiting.")
         sys.exit()
 
-
     detectors  = exp.getData(detectors , keys)
-    # detectors =  exp.run(detectors) to get an array of experimental energies, and add the corresponding experimental spectra to each detector
+
+    for key , value in detectors.items():
+        with open(value.simFilename , "r") as simin:
+            bins = []
+            hist = []
+            for line in simin.readlines():
+                b , h  = [ float(x.strip()) for x in line.split(",") ]
+                bins.append(b)
+                hist.append(h)
+
+            value.setSimSpec(bins . hist)
+
+
 
     #res = ResolutionFitter()
     #detectors = res.runAll(detectors)
