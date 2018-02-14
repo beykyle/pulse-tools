@@ -8,7 +8,7 @@ rescon.py: Code to find the energy resolution of an organic scintillator by iter
 import numpy as np
 import sys
 import matplotlib.pyplot as plt
-from math import ceil
+import math
 import glob, os
 import waveform
 import dataloader
@@ -183,7 +183,7 @@ class Experiment:
     def findComptonEdges(self , bins , hist  , key):
         print("calibrating spectrum energy lines: " +  ' , '.join(str(e) for e in self.lines) + " MeV")
         print("Finding Compton Edges")
-        splineWidth = int(ceil(self.bins/15))
+        splineWidth = int(math.ceil(self.bins/15))
         if splineWidth%2 == 0:
             splineWidth = splineWidth + 1
         nhist = savgol( (hist / hist.max())                   , splineWidth      , 3 )
@@ -192,7 +192,7 @@ class Experiment:
         #k  = np.where( diff1 == diff1.min() )
         #k2 = np.where( diff2 == diff2.min() )
 
-        peakw = int(ceil(self.bins/20))
+        peakw = int(math.ceil(self.bins/20))
         peakid  = peaks( nhist ,  [peakw , peakw + 1 , peakw+2] )
         peakid2 = peaks( diff2 ,  [peakw , peakw + 1 , peakw+2] )
         if len(peakid) < 3 or len(peakid2) < 3:
@@ -283,9 +283,11 @@ class Simulation:
         return(spectrum)
 
 class ResolutionFitter:
-    def __init__(self ,  **kwargs):
+    def __init__(self , lines ,  **kwargs):
         for key , value in kwargs.items():
             setattr(self , key  , value)
+
+        self.lines = lines
 
     def kernelFWHM(self , erg , a , b, c):
         return( a + b * np.sqrt( erg + c * erg ** 2) )
@@ -319,7 +321,8 @@ class ResolutionFitter:
 
     def runAll(self , detectors):
         for key , value in detectors.items:
-            broadened , (a,b,c) , covariance =  self.runFit(value.energy , value.simSpec , 0.04 , 0.015 , 8)
+            value.interpolate(lines)
+            broadened , (a,b,c) , covariance =  self.runFit(value.expEnergy , value.simSpec , 0.04 , 0.015 , 8)
             visualizeConvolustion(value.energy , value.expSpec , value.simSpec , broadened)
             plotRes(value.energy , a , b ,c  , covariance)
             #output to a file like 'detector: a +/- stdev, b +/- stddev, c +/- stddev'
@@ -327,8 +330,9 @@ class ResolutionFitter:
         return(detectors)
 
 class Detector:
-    def __init__(self , simFilename ):
+    def __init__(self , simFilename  , key):
         self.simFilename = simFilename
+        self.name = key
 
     def setExpFilename(self , expFilename):
         self.expFilename = expFilename
@@ -346,9 +350,41 @@ class Detector:
     def setChannels(self , channels):
         self.channels = channels
 
-    def interpolate(self):
-        #interpolate energy and expSpec to match binning of simulated spectrum
-        pass
+    def interpolate(self , lines):
+        # we can only go from the largest min energy bin to the smallest max energy bin
+        elow = min( self.expEnergy[0] , self.simEnergy[0])
+        ehigh = min( self.expEnergy[-1] , self.simEnergy[-1])
+
+        self.expEnergy = self.expEnergy[np.where(self.expEnergy >= elow and self.expEnergy <= ehigh)]
+        self.simEnergy = self.simEnergy[np.where(self.simEnergy >= elow and self.simEnergy <= ehigh)]
+
+        if self.simEnergy[0] >= self.expEnergy[-1] or self.simEnergy[-1] <= self.simEnergy[0]:
+            print("Simulation and experiment not within the same energy range! Go run another simulation with the correct energy range")
+            sys.exit()
+
+        for line in lines:
+            if line > ehigh or line < elow:
+                print("Expected gamma lines are outside of the range of the experimental and simulated energy binning! How did you manage that?")
+                sys.exit()
+
+        # match the experimental and simulated energy bining by interpolating the simulated spectrum
+        simSpecNew   = np.zeros(len(self.expEnergy))
+        for i , en in enumerate(self.expEnergy):
+                matchIndices = np.where( math.fabs( self.simEnergy - en) ==  math.fabs( self.simEnergy - en ).min() )
+                simSpecNew[i] = self.simSpec[ matchIndices[0] ]
+
+        plt.plot(self.simEnergy , self.simSpec , label='Simulation')
+        plt.plot(self.expEnergy , simSpecNew   , label='Interpolated Simulation')
+        plt.plot(self.expEnergy , self.expSpec , label='Experimental')
+
+        plt.xlabel("Light Output [MeV]")
+        plt.ylabel("Counts")
+        plt.title(self.name)
+        plt.legend()
+        plt.show()
+
+        self.simSpec    = simSpecNew
+        self.simEnergy  = self.expEnergy
 
     def setValues(a , b, c , pcov):
         self.a = a
@@ -403,7 +439,7 @@ if __name__ == '__main__':
     if 'Sim Data' in conf:
         for (key , value) in conf.items('Sim Data'):
             keys.append(key)
-            detectors[key] = Detector(value)
+            detectors[key] = Detector(value , key)
     else:
         print("No Sim Data section in config file! exiting.")
         sys.exit()
@@ -463,10 +499,8 @@ if __name__ == '__main__':
 
             value.setSimSpec(bins . hist)
 
-
-
-    #res = ResolutionFitter()
-    #detectors = res.runAll(detectors)
+    res = ResolutionFitter(lines)
+    detectors = res.runAll(detectors)
 
 
 
