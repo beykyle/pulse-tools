@@ -9,8 +9,6 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import math
-import glob, os
-import waveform
 import dataloader
 import getwavedata
 import configparser
@@ -48,7 +46,6 @@ class Experiment:
 
         self.bins  = int(bins)
         self.lines = lines
-        self.loud = True
 
     def getData(self , detectors , keys):
         spec = []
@@ -74,16 +71,18 @@ class Experiment:
             energy = self.calibrate(bins , edges)
             energies.append(energy[1:])
 
-            plt.plot(energy[1:], hist)
-            plt.title(keys[i])
-            plt.xlabel("Light Output [MeV]")
-            plt.ylabel("Counts")
-            for line in self.lines:
-                lab = str(line) + " MeV"
-                plt.plot([line , line] , [0 , hist.max()] , '--' , label=lab)
+            if self.loud == True:
 
-            plt.legend()
-            plt.show()
+                plt.plot(energy[1:], hist)
+                plt.title(keys[i])
+                plt.xlabel("Light Output [MeV]")
+                plt.ylabel("Counts")
+                for line in self.lines:
+                    lab = str(line) + " MeV"
+                    plt.plot([line , line] , [0 , hist.max()] , '--' , label=lab)
+
+                plt.legend()
+                plt.show()
 
             # set experimental values in detector object
             detectors[keys[i]].setExpSpec(hist)
@@ -199,9 +198,10 @@ class Experiment:
             raise NotImplementedError("Compton edges couldn't be found, and manual selection hasn't been implemented. Try again with more data!")
             return(0)
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.plot( bins[1:]   , nhist            , label="smoothed spectrum"       )
+        if self.loud == True:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.plot( bins[1:]   , nhist            , label="smoothed spectrum"       )
 
         #find first line
         print("Looking for " + str(self.lines[0]) + " MeV Compton edge.")
@@ -236,18 +236,21 @@ class Experiment:
                 nhist = nhist[:peak2]
                 print("Got it!")
 
-        plt.xlabel("Pulse Integral [V ns]")
-        plt.ylabel("Relative Frequency")
-        plt.title(key)
+        if self.loud == True:
+            plt.xlabel("Pulse Integral [V ns]")
+            plt.ylabel("Relative Frequency")
+            plt.title(key)
+            plt.legend()
+            plt.show()
 
-        plt.legend()
-        plt.show()
-        correct = input("Are the compton edges marked correctly? [yes/no]")
-        if "y" in correct:
-            return( [ bins[k[0][0]]  , bins[k2[0][0]] ] )
+            correct = input("Are the compton edges marked correctly? [yes/no]")
+            if "y" in correct:
+                return( [ bins[k[0][0]]  , bins[k2[0][0]] ] )
+            else:
+                raise NotImplementedError("Sorry! We haven't added manually selected compton edges yet...")
+                return(0)
         else:
-            raise NotImplementedError("Sorry! We haven't added manually selected compton edges yet...")
-            return(0)
+            return( [ bins[k[0][0]]  , bins[k2[0][0]] ] )
 
     def makeTestSpectrum(self , comptonErg , a , b , c):
         spectrum = np.zeros( len(self.energy) )
@@ -290,7 +293,10 @@ class ResolutionFitter:
         self.lines = lines
 
     def kernelFWHM(self , erg , a , b, c):
-        return( a + b * np.sqrt( erg + c * erg ** 2) )
+        if erg > 0:
+            return( a + b * np.sqrt( erg + c * erg ** 2) )
+        else:
+            return 0.1
 
     def gaussianKernel(self , erg ,  a , b , c ):
         gauss = np.exp( -self.energy**2 * (1.6651092223) / (self.kernelFWHM(erg , a , b , c) ) )
@@ -300,16 +306,13 @@ class ResolutionFitter:
         convolved = np.zeros(1)
         n = len(self.energy)
         for i , dval in enumerate(data):
-            shiftGauss = np.append(  np.zeros(len(self.energy) ) , self.gaussianKernel(self.energy[i] , a , b , c) )
+            shiftGauss = np.append(  np.zeros(len(self.energy)) , self.gaussianKernel(self.energy[i] , a , b , c) )
             convolved = np.append(convolved ,  np.dot( shiftGauss[n - i:2*n - i] ,  data ) )
 
         return( convolved[0:n] )
 
     def runFit(self , experimental , simulated , a0 , b0 , c0):
-        popt , pcov = fit(self.convolveWithGaussian , simulated , experimental ,
-                            p0 = (a0 , b0 , c0) ,
-                            bounds = ( (0 , 0 , 0 ) , (1 , 1 , np.inf) )
-                          )
+        popt , pcov = fit(self.convolveWithGaussian, simulated, experimental, p0 = (a0 , b0 , c0), bounds = ((0 , 0 , 0 ) , (15 , 15 ,0.01) ))
 
         broadened = self.convolveWithGaussian(simulated , *popt)
 
@@ -320,11 +323,13 @@ class ResolutionFitter:
         return(broadened , popt , pcov)
 
     def runAll(self , detectors):
-        for key , value in detectors.items:
+        for key , value in detectors.items():
+            a , b , c = 0.01 , 0.01 , 0.01
             value.interpolate(lines)
-            broadened , (a,b,c) , covariance =  self.runFit(value.expEnergy , value.simSpec , 0.04 , 0.015 , 8)
-            visualizeConvolustion(value.energy , value.expSpec , value.simSpec , broadened)
-            plotRes(value.energy , a , b ,c  , covariance)
+            self.energy = value.expEnergy
+            broadened , (a,b,c) , covariance =  self.runFit(value.expSpec / max(value.expSpec) , value.simSpec / max(value.simSpec), a , b , c)
+            visualizeConvolution(value.expEnergy , value.expSpec , value.simSpec , broadened , key)
+            plotRes(value.expEnergy , a , b ,c  , covariance , key)
             #output to a file like 'detector: a +/- stdev, b +/- stddev, c +/- stddev'
 
         return(detectors)
@@ -338,25 +343,31 @@ class Detector:
         self.expFilename = expFilename
 
     def setExpSpec(self  , expSpec):
-        self.expSpec = expSpec
+        self.expSpec = np.array(expSpec)
 
     def setExpEnergy(self  , energy):
-        self.expEnergy = energy
+        self.expEnergy = np.array(energy)[1:]
 
     def setSimSpec(self , energy , simSpec):
-        self.simSpec = simSpec
-        self.simEnergy = energy
+        self.simSpec = np.array(simSpec)
+        self.simEnergy = np.array(energy)
 
     def setChannels(self , channels):
         self.channels = channels
 
     def interpolate(self , lines):
+        self.simSpec = self.simSpec / max(self.simSpec)
+        self.expSpec = self.expSpec / max(self.expSpec)
+
+        #plt.plot(self.simEnergy , self.simSpec)
+        #plt.plot(self.expEnergy , self.expSpec)
         # we can only go from the largest min energy bin to the smallest max energy bin
         elow = min( self.expEnergy[0] , self.simEnergy[0])
         ehigh = min( self.expEnergy[-1] , self.simEnergy[-1])
 
-        self.expEnergy = self.expEnergy[np.where(self.expEnergy >= elow and self.expEnergy <= ehigh)]
-        self.simEnergy = self.simEnergy[np.where(self.simEnergy >= elow and self.simEnergy <= ehigh)]
+        self.expEnergy = self.expEnergy[np.where(self.expEnergy >= elow) and np.where(self.expEnergy <= ehigh)]
+        self.expSpec   = self.expSpec[  np.where(self.expEnergy >= elow) and np.where(self.expEnergy <= ehigh)]
+        self.simEnergy = self.simEnergy[np.where(self.simEnergy >= elow) and np.where(self.simEnergy <= ehigh)]
 
         if self.simEnergy[0] >= self.expEnergy[-1] or self.simEnergy[-1] <= self.simEnergy[0]:
             print("Simulation and experiment not within the same energy range! Go run another simulation with the correct energy range")
@@ -370,7 +381,7 @@ class Detector:
         # match the experimental and simulated energy bining by interpolating the simulated spectrum
         simSpecNew   = np.zeros(len(self.expEnergy))
         for i , en in enumerate(self.expEnergy):
-                matchIndices = np.where( math.fabs( self.simEnergy - en) ==  math.fabs( self.simEnergy - en ).min() )
+                matchIndices = np.where( np.abs( self.simEnergy - en) ==  np.abs( self.simEnergy - en ).min() )
                 simSpecNew[i] = self.simSpec[ matchIndices[0] ]
 
         plt.plot(self.simEnergy , self.simSpec , label='Simulation')
@@ -405,7 +416,7 @@ def test():
     visualizeConvolution( energy , experimental , simulation , broadened )
     plotRes(energy , a , b , c , pcov)
 
-def plotRes(energy , a , b , c , pcov):
+def plotRes(energy , a , b , c , pcov , title):
     y = a + b*np.sqrt(energy + c*energy**2)
     error = np.sqrt( pcov[0][0]**2 + (energy + c*energy**2) * pcov[1][1]**2 + energy**3 * b**2  / (4 * energy * c + 1) * pcov[2][2] )
     plt.plot(energy , y  , "r--" , label="fitting result")
@@ -413,10 +424,11 @@ def plotRes(energy , a , b , c , pcov):
     plt.legend()
     plt.xlabel('Energy [MeV]')
     plt.ylabel('FWHM [MeV]')
+    plt.title(title)
     plt.show()
 
 
-def visualizeConvolution(energy , experimental , simulation , broadened ):
+def visualizeConvolution(energy , experimental , simulation , broadened , title):
     plt.plot(energy , experimental  , label="experimental" )
     plt.plot(energy , simulation    , label="simulated")
     plt.plot(energy , broadened     , label="broadened")
@@ -424,6 +436,7 @@ def visualizeConvolution(energy , experimental , simulation , broadened ):
     plt.legend()
     plt.xlabel('Energy [MeV]')
     plt.ylabel('Frequency [Arbitrary Units]')
+    plt.title(title)
     plt.show()
 
 if __name__ == '__main__':
@@ -460,6 +473,7 @@ if __name__ == '__main__':
     # general setup
     if 'General' in conf:
         write    = booleanize( conf['General']['write'].strip() )
+        loudin   = booleanize( conf['General']['loud'].strip()  )
         numBins  = int(conf['General']['bin'])
         lines    = [ float(x.strip()) for x in conf['General']['lines'].split(",") ]
 
@@ -479,9 +493,9 @@ if __name__ == '__main__':
                 print("No Detector Mapping section in config file! Can't use raw wave data.")
                 sys.exit()
 
-            exp = Experiment(lines , bins=numBins , loud=True , readSpec=False , WaveConfig=waveConfig, writeSpec=write)
+            exp = Experiment(lines , bins=numBins , loud=loudin , readSpec=False , WaveConfig=waveConfig, writeSpec=write)
         else:
-            exp = Experiment(lines , bins=numBins , loud=True , readSpec=True , writeSpec=write)
+            exp = Experiment(lines , bins=numBins , loud=loudin , readSpec=True , writeSpec=write)
     else:
         print("No General section in config file! exiting.")
         sys.exit()
@@ -493,14 +507,13 @@ if __name__ == '__main__':
             bins = []
             hist = []
             for line in simin.readlines():
-                b , h  = [ float(x.strip()) for x in line.split(",") ]
+                b , h  = [ float(x.strip()) for x in line.split("   ") ]
                 bins.append(b)
                 hist.append(h)
 
-            value.setSimSpec(bins . hist)
+            value.setSimSpec(bins , hist)
 
     res = ResolutionFitter(lines)
     detectors = res.runAll(detectors)
-
 
 
