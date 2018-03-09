@@ -1,8 +1,8 @@
 # rc-detector
-A collection of tools for analyzing list mode organic scintillator pulses and characterize detector systems. 
+A collection of tools for analyzing list mode organic scintillator pulses and characterizing detector systems. 
 # psdPulsePlotter
 An interactive GUI that allows a user to select a region from a pulse shape discrimination plot (scatter density plot of the total pulse integral to tail/total ratio) to view and save pulses from. 
-Usefule for identifying if a region on your plot is due to a particle interaction, clipped or malformed pulses, double pulses, or what gave you.
+Useful for identifying if a region on your plot is due to a particle interaction, clipped or malformed pulses, double pulses, or what have you.
 # rescon
 This code finds the energy resolution of organic, Compton scatter based, scintillators by iteratively convolving 
 a Gaussian with an energy dependent width into an unbroadened Monte Carlo simulated pulse height spectrum until
@@ -13,7 +13,7 @@ It can be run for multi-detector systems, where each detector has more than one 
 It has one .ini config file, which is specified from the command line, e.g.:
     $ python rescon.py config_filename.ini
 
-The config file included here has detailed comments on it's use.
+The '*.ini' config file included here has detailed comments on it's use.
 
 The script requires simulation spectra and experimental spectra in the form of comma seperated, 2 column files, e.g.:
     bin1,histogram_value1
