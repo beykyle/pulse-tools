@@ -16,6 +16,7 @@ from scipy.ndimage.filters import gaussian_filter1d as gfilter
 from scipy.optimize import curve_fit as fit
 from scipy.signal import savgol_filter as savgol
 from scipy.signal import find_peaks_cwt as peaks
+from lmfit import Model
 
 __author__ = "Kyle Beyer"
 __version__ = "1.0.1"
@@ -23,17 +24,16 @@ __maintainer__ = "Kyle Beyer"
 __email__ = "beykyle@umich.edu"
 __status__ = "Development"
 
-def booleanize(value):
-    """Return value as a boolean."""
-    true_values = ("yes", "true", "1")
-    false_values = ("no", "false", "0")
-    if isinstance(value, bool):
-        return value
-    if value.lower() in true_values:
-        return True
-    elif value.lower() in false_values:
-        return False
-    raise TypeError("Cannot booleanize ambiguous value '%s'" % value)
+class Spectrum:
+    def __init__(self , spec):
+        self.spec = spec
+
+    def findComptonEdges(self):
+        self.comptonEdges = [0]
+
+    def findValleys(self):
+        self.valley = [0]
+
 
 class Experiment:
     def __init__(self , lines , bins, *args , **kwargs):
@@ -259,7 +259,7 @@ class Experiment:
             if self.energy[i] < comptonErg[0]:
                 spectrum[i] += 20 * self.energy[i]**2 -  10 * self.energy[i] + 6
             if self.energy[i] < comptonErg[1]:
-                spectrum[i] += 10 * (self.energy[i] - comptonErg[0])**2 -  5 * (self.energy[i] - comptonErg[0]) + 3
+                spectrum[i] += 2 * (self.energy[i] - comptonErg[0])**2 -  1 * (self.energy[i] - comptonErg[0])
 
         res = ResolutionFitter(self.energy)
         spectrum = res.convolveWithGaussian( spectrum , a , b , c ) + 0.6 * np.random.rand(len(self.energy))
@@ -279,7 +279,7 @@ class Simulation:
         for i , ch in enumerate(spectrum):
             spectrum[i] += 0.2*np.random.rand()
             if self.energy[i] < comptonErg[0]:
-                spectrum[i] += 20 * self.energy[i]**2 -  10 * self.energy[i] + 6
+                spectrum[i] += 10 * self.energy[i]**2 -  20 * self.energy[i] + 6
             if self.energy[i] < comptonErg[1]:
                 spectrum[i] += 10 * (self.energy[i] - comptonErg[0])**2 -  5 * (self.energy[i] - comptonErg[0])+ 3
 
@@ -302,37 +302,45 @@ class ResolutionFitter:
         gauss = np.exp( -self.energy**2 * (1.6651092223) / (self.kernelFWHM(erg , a , b , c) ) )
         return(gauss / np.sum(gauss) )
 
-    def convolveWithGaussian(self , data , a , b , c):
+    def convolveWithGaussian(self , x , a , b , c):
         convolved = np.zeros(1)
         n = len(self.energy)
-        for i , dval in enumerate(data):
+        for i , dval in enumerate(x):
             shiftGauss = np.append(  np.zeros(len(self.energy)) , self.gaussianKernel(self.energy[i] , a , b , c) )
-            convolved = np.append(convolved ,  np.dot( shiftGauss[n - i:2*n - i] ,  data ) )
+            convolved = np.append(convolved ,  np.dot( shiftGauss[n - i:2*n - i] ,  x ) )
 
         return( convolved[0:n] )
 
-    def runFit(self , experimental , simulated , a0 , b0 , c0):
-        popt , pcov = fit(self.convolveWithGaussian, simulated, experimental, p0 = (a0 , b0 , c0), bounds = ((0 , 0 , 0 ) , (15 , 15 ,0.01) ))
-
+    def runFit(self , simulated , experimental , a0 , b0 , c0 , key):
+        popt , pcov = fit(self.convolveWithGaussian, simulated, experimental, p0 = (a0 , b0 , c0), bounds = ((0 , 0 , 0 ) , (1000 , 1000 ,1000) ))
         broadened = self.convolveWithGaussian(simulated , *popt)
 
-        print("  a= " , popt[0]  , "+/- " , pcov[0][0] ," ",
+        print(key + ":  a= " , popt[0]  , "+/- " , pcov[0][0] ," ",
               ", b= " , popt[1]  , "+/- " , pcov[1][1] ," ",
               ", c= " , popt[2]  , "+/- " , pcov[2][2] ," ")
 
         return(broadened , popt , pcov)
 
+    def runLMfit(self , simulated , experimental , initial):
+        gmodel = Model(self.convolveWithGaussian)
+        print(gmodel.param_names)
+        print(gmodel.independent_vars)
+        result = gmodel.fit(experimental , x=simulated , a=initial[0] , b=initial[1] , c=initial[2])
+        print(result.fit_report())
+
     def runAll(self , detectors):
         for key , value in detectors.items():
-            a , b , c = 0.01 , 0.01 , 0.01
+            a , b , c = 0.001 , 0.001 , 8
             value.interpolate(lines)
             self.energy = value.expEnergy
-            broadened , (a,b,c) , covariance =  self.runFit(value.expSpec / max(value.expSpec) , value.simSpec / max(value.simSpec), a , b , c)
+         #   self.runLMfit(value.simSpec , value.expSpec, [a , b , c])
+            broadened , (a,b,c) , covariance =  self.runFit(value.simSpec , value.expSpec, a , b , c , key)
             visualizeConvolution(value.expEnergy , value.expSpec , value.simSpec , broadened , key)
             plotRes(value.expEnergy , a , b ,c  , covariance , key)
             #output to a file like 'detector: a +/- stdev, b +/- stddev, c +/- stddev'
 
         return(detectors)
+
 
 class Detector:
     def __init__(self , simFilename  , key):
@@ -349,7 +357,7 @@ class Detector:
         self.expEnergy = np.array(energy)[1:]
 
     def setSimSpec(self , energy , simSpec):
-        self.simSpec = np.array(simSpec)
+        self.simSpec =savgol(  np.array(simSpec) , 7 , 3)
         self.simEnergy = np.array(energy)
 
     def setChannels(self , channels):
@@ -362,12 +370,20 @@ class Detector:
         #plt.plot(self.simEnergy , self.simSpec)
         #plt.plot(self.expEnergy , self.expSpec)
         # we can only go from the largest min energy bin to the smallest max energy bin
-        elow = min( self.expEnergy[0] , self.simEnergy[0])
+
+        #elow = min( self.expEnergy[0] , self.simEnergy[0])
+        elow = 0.2
         ehigh = min( self.expEnergy[-1] , self.simEnergy[-1])
 
-        self.expEnergy = self.expEnergy[np.where(self.expEnergy >= elow) and np.where(self.expEnergy <= ehigh)]
-        self.expSpec   = self.expSpec[  np.where(self.expEnergy >= elow) and np.where(self.expEnergy <= ehigh)]
-        self.simEnergy = self.simEnergy[np.where(self.simEnergy >= elow) and np.where(self.simEnergy <= ehigh)]
+        lowExpInd = np.where( np.abs( self.expEnergy - elow) ==  np.abs( self.expEnergy - elow ).min() )
+        lowSimInd = np.where( np.abs( self.simEnergy - elow) ==  np.abs( self.simEnergy - elow ).min() )
+        highExpInd = np.where( np.abs( self.expEnergy - ehigh) ==  np.abs( self.expEnergy - ehigh ).min() )
+        highSimInd = np.where( np.abs( self.simEnergy - ehigh) ==  np.abs( self.simEnergy - ehigh ).min() )
+
+        self.expEnergy = self.expEnergy[lowExpInd[0][0]:highExpInd[0][0]]
+        self.expSpec   = self.expSpec[lowExpInd[0][0]:highExpInd[0][0]]
+        self.simEnergy = self.simEnergy[lowSimInd[0][0]:highSimInd[0][0]]
+        self.simSpec   = self.simSpec[lowSimInd[0][0]:highSimInd[0][0]]
 
         if self.simEnergy[0] >= self.expEnergy[-1] or self.simEnergy[-1] <= self.simEnergy[0]:
             print("Simulation and experiment not within the same energy range! Go run another simulation with the correct energy range")
@@ -379,14 +395,16 @@ class Detector:
                 sys.exit()
 
         # match the experimental and simulated energy bining by interpolating the simulated spectrum
-        simSpecNew   = np.zeros(len(self.expEnergy))
+        simSpecNew = np.zeros(len(self.expEnergy))
         for i , en in enumerate(self.expEnergy):
+            if en > elow:
                 matchIndices = np.where( np.abs( self.simEnergy - en) ==  np.abs( self.simEnergy - en ).min() )
                 simSpecNew[i] = self.simSpec[ matchIndices[0] ]
 
-        plt.plot(self.simEnergy , self.simSpec , label='Simulation')
-        plt.plot(self.expEnergy , simSpecNew   , label='Interpolated Simulation')
-        plt.plot(self.expEnergy , self.expSpec , label='Experimental')
+        # cut the spectra in the valley before the first compton edge
+        plt.plot(self.simEnergy , self.simSpec , label='Simulation' , color='g')
+        plt.plot(self.expEnergy , simSpecNew   , label='Interpolated Simulation' , color='b')
+        plt.plot(self.expEnergy , self.expSpec , label='Experimental', color='r')
 
         plt.xlabel("Light Output [MeV]")
         plt.ylabel("Counts")
@@ -429,15 +447,27 @@ def plotRes(energy , a , b , c , pcov , title):
 
 
 def visualizeConvolution(energy , experimental , simulation , broadened , title):
-    plt.plot(energy , experimental  , label="experimental" )
-    plt.plot(energy , simulation    , label="simulated")
-    plt.plot(energy , broadened     , label="broadened")
+    plt.plot(energy , experimental  , label="Experimental"  , color='r')
+    plt.plot(energy , simulation    , label="Simulation" , color='b')
+    plt.plot(energy , broadened     , label="Broadened" , color='k')
    # plt.plot(np.linspace(0 , max(energy) , num=len(convolved)) , convolved , label="convolved")
     plt.legend()
     plt.xlabel('Energy [MeV]')
     plt.ylabel('Frequency [Arbitrary Units]')
     plt.title(title)
     plt.show()
+
+def booleanize(value):
+    """Return value as a boolean."""
+    true_values = ("yes", "true", "1")
+    false_values = ("no", "false", "0")
+    if isinstance(value, bool):
+        return value
+    if value.lower() in true_values:
+        return True
+    elif value.lower() in false_values:
+        return False
+    raise TypeError("Cannot booleanize ambiguous value '%s'" % value)
 
 if __name__ == '__main__':
     fi     = sys.argv[1]
