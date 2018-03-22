@@ -10,23 +10,24 @@ from numpy import mean, sqrt, square
 
 class Waveform:
     def __init__(self, samples, polarity, baselineOffset, nBaselineSamples):
-        self.samples = samples
-        self.polarity = polarity
-        self.baselineOffset = baselineOffset
+        self.samples          = samples
+        self.polarity         = polarity
+        self.baselineOffset   = baselineOffset
         self.nBaselineSamples = nBaselineSamples
-        self.maxIndex = -1
-        self.baseline = -1
-        self.blsSamples = -1
-        self.badPulse = False
-        self.baselined = False
+        self.maxIndex         = np.argmax(samples)
+        self.baseline         = -1
+        self.blsSamples       = -1
+        self.height           = -1
+        self.badPulse         = False
+        self.baselined        = False
 
     def SetSamples(self,newSamples):
-        self.samples = newSamples
-        self.maxIndex = -1
-        self.baseline = -1
+        self.samples    = newSamples
+        self.maxIndex   = -1
+        self.baseline   = -1
         self.blsSamples = -1
-        self.badPulse = False
-        self.baselined = False
+        self.badPulse   = False
+        self.baselined  = False
 
     def BaselineSubtract(self):
         if self.polarity > 0: # Positive pulse
@@ -119,3 +120,40 @@ class Waveform:
             if tSamples[loopIndex] < targetVal:
                 return (targetVal-tSamples[loopIndex])/(tSamples[loopIndex+1]-tSamples[loopIndex]) + loopIndex
         return -1
+
+    def GetPSD(self):
+      total = np.sum( self.samples[np.where(self.samples > 0  )] )
+      tail = self.GetIntegralToZeroCrossing()
+      return(tail / total)
+
+    def isDouble(self):
+      if not self.baselined:
+        self.BaselineSubtract()
+      if self.badPulse:
+        return -1
+      if self.height == -1:
+        self.height = np.max(self.samples)
+      delta_y = 0.05 * self.height
+      delta_x = 3
+      x0 , xf = 0 , len(self.samples)
+      y0 , yf = self.samples[x0] , self.samples[xf]
+      x1 , y1 = self.maxIndex , self.height
+      # get slope from max to end of pulse
+      s1 = (yf + delta_y - y1)  / (xf - (x1 + delta_x))
+      # get slope from max to beginning of pulse
+      s2 = (y1 - (y0 + delta_y)) / ((x1 - delta_x) - x0 )
+
+      for x , y in enumerate(self.samples[:x1-delta_x]):
+        if y > y0 + s2 * x:
+          self.badPulse == True
+          return(True)
+
+      for x , y in enumerate(self.samples[x1+delta_x:]):
+        if y > (y1 + s1 * (x - (x1 + delta_x))):
+          self.badPulse == True
+          return(True)
+
+
+
+
+
