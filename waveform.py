@@ -20,6 +20,8 @@ class Waveform:
         self.height           = -1
         self.badPulse         = False
         self.baselined        = False
+        self.total            = 0
+        self.ratio            = 0
 
     def SetSamples(self,newSamples):
         self.samples    = newSamples
@@ -44,8 +46,7 @@ class Waveform:
             if (self.maxIndex < self.baselineOffset + self.nBaselineSamples):
                 self.badPulse = True
                 return
-            self.baseline = np.average(self.samples[
-                                       self.maxIndex - self.baselineOffset - self.nBaselineSamples:self.maxIndex - self.baselineOffset])
+            self.baseline = np.average(self.samples[:self.nBaselineSamples])
             self.blsSamples = self.baseline - self.samples
         self.baselined = True
 
@@ -120,11 +121,6 @@ class Waveform:
             if tSamples[loopIndex] < targetVal:
                 return (targetVal-tSamples[loopIndex])/(tSamples[loopIndex+1]-tSamples[loopIndex]) + loopIndex
         return -1
-
-    def GetPSD(self):
-      total = np.sum( self.samples[np.where(self.samples > 0  )] )
-      tail = self.GetIntegralToZeroCrossing()
-      return(tail / total)
 
     def isDouble(self):
       if not self.baselined:
