@@ -23,9 +23,13 @@ The script requires simulation spectra and experimental spectra in the form of c
 
 
 >   bin1,histogram_value1
+>
 >   bin2,histogram_value2
+>
 >      .     .
+>
 >      .     .
+>
 >      .     .
 
 
