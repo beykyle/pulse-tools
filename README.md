@@ -17,7 +17,7 @@ It has one .ini config file, which is specified from the command line, e.g.:
 
 >   $ python rescon.py config_filename.ini
 
-The *.ini config file included here has detailed comments on it's use.
+The .ini config file included here has detailed comments on it's use.
 
 The script requires simulation spectra and experimental spectra in the form of comma seperated, 2 column files, e.g.:
 
