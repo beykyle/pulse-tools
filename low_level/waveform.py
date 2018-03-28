@@ -7,6 +7,7 @@
 import numpy as np
 import scipy.signal as signal
 from numpy import mean, sqrt, square
+from matplotlib import pyplot as plt
 
 class Waveform:
     def __init__(self, samples, polarity, baselineOffset, nBaselineSamples):
@@ -20,6 +21,8 @@ class Waveform:
         self.height           = -1
         self.badPulse         = False
         self.baselined        = False
+        self.total            = 0
+        self.ratio            = 0
 
     def SetSamples(self,newSamples):
         self.samples    = newSamples
@@ -44,8 +47,7 @@ class Waveform:
             if (self.maxIndex < self.baselineOffset + self.nBaselineSamples):
                 self.badPulse = True
                 return
-            self.baseline = np.average(self.samples[
-                                       self.maxIndex - self.baselineOffset - self.nBaselineSamples:self.maxIndex - self.baselineOffset])
+            self.baseline = np.average(self.samples[:self.nBaselineSamples])
             self.blsSamples = self.baseline - self.samples
         self.baselined = True
 
@@ -121,37 +123,60 @@ class Waveform:
                 return (targetVal-tSamples[loopIndex])/(tSamples[loopIndex+1]-tSamples[loopIndex]) + loopIndex
         return -1
 
-    def GetPSD(self):
-      total = np.sum( self.samples[np.where(self.samples > 0  )] )
-      tail = self.GetIntegralToZeroCrossing()
-      return(tail / total)
-
-    def isDouble(self):
+    def isDouble(self , show):
+      # needs to be optimized
       if not self.baselined:
         self.BaselineSubtract()
       if self.badPulse:
-        return -1
+        return - 1
       if self.height == -1:
-        self.height = np.max(self.samples)
+        self.height = np.max(self.blsSamples)
+
       delta_y = 0.05 * self.height
-      delta_x = 3
-      x0 , xf = 0 , len(self.samples)
-      y0 , yf = self.samples[x0] , self.samples[xf]
-      x1 , y1 = self.maxIndex , self.height
-      # get slope from max to end of pulse
-      s1 = (yf + delta_y - y1)  / (xf - (x1 + delta_x))
-      # get slope from max to beginning of pulse
-      s2 = (y1 - (y0 + delta_y)) / ((x1 - delta_x) - x0 )
+      delta_x = int( round( len(self.samples) / 81))
+      y0 = self.blsSamples[0]
+      x0 = 0
+      xf = len(self.blsSamples) - 1
+      yf = self.blsSamples[xf]
+      ym = self.height
+      xm = self.maxIndex
 
-      for x , y in enumerate(self.samples[:x1-delta_x]):
-        if y > y0 + s2 * x:
-          self.badPulse == True
-          return(True)
+      # find linear slope and intercept from beginning to max y = a *x + b
+      a = (ym - y0) / (xm - delta_x - x0)
+      b = y0 + delta_y
 
-      for x , y in enumerate(self.samples[x1+delta_x:]):
-        if y > (y1 + s1 * (x - (x1 + delta_x))):
-          self.badPulse == True
-          return(True)
+      # find the exponential constants for the falling edge y = c * e^(r(x)) + delta_y
+      r = 2*(np.log(xm) - np.log(xf + delta_x)) / (xf - xm - delta_x )
+      c =  ym
+
+      x =  np.array( range(0 , len(self.samples))  )
+      upperCutoff = c * np.exp( r * (x[xm:] - xm - delta_x)) + delta_y
+      lowerCutoff = a * x[:xm] + b
+
+      for xi , y in enumerate(self.blsSamples):
+        if xi < xm:
+          if y > lowerCutoff[xi]:
+            self.badPulse == True
+            return(True)
+        if xi >= xm:
+          if y > upperCutoff[xi - xm]:
+            self.badPulse == True
+            return(True)
+
+      if show == True:
+        print("plotting")
+        plt.plot( x , self.blsSamples)
+        plt.plot( x[:xm] , lowerCutoff , label="cutoff")
+        plt.plot( x[xm:] , upperCutoff , label="cutoff")
+        plt.xlabel("time")
+        plt.ylabel("pulse height")
+        plt.legend()
+        if self.badPulse == True:
+          plt.title("Double!!")
+        plt.show()
+
+      return(False)
+
 
 
 

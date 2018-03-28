@@ -6,7 +6,6 @@ vs. total integral from dafca output, and selectively view pulses from regions
 of the plot
 
 """
-
 import numpy as np
 import sys
 from matplotlib import pyplot as plt
@@ -23,17 +22,33 @@ __status__ = "Development"
 
 ##############################################
 
-pywaves_directory = "./"
+pywaves_directory = "../low_level/"
 
 ##############################################
 
 sys.path.extend([pywaves_directory])
+sys.path.extend("./")
 
+
+from pulseTemplates import readAndAveragePulses , writePulse
+from compPulse import compPulses
 from dataloader  import DataLoader
 from getwavedata import GetWaveData
 from waveform    import Waveform
 import dataloader
 import getwavedata
+
+def booleanize(value):
+    """Return value as a boolean."""
+    true_values = ("yes", "true", "1" , "y" , "Yes" , "Y")
+    false_values = ("no", "false", "0" , "n" , "N" , "No")
+    if isinstance(value, bool):
+        return value
+    if value.lower() in true_values:
+        return True
+    elif value.lower() in false_values:
+        return False
+    raise TypeError("Cannot booleanize ambiguous value '%s'" % value)
 
 class Annotate(object):
   def __init__(self):
@@ -110,7 +125,7 @@ def readPulses(config):
 
   return(tail , total , ratio)
 
-def getPulsesFromBox(waves , tailLim , totLim ):
+def getPulsesFromBox(waves , tailLim , totLim  ):
 
   tailLow  = min(tailLim)
   tailHigh = max(tailLim)
@@ -118,8 +133,7 @@ def getPulsesFromBox(waves , tailLim , totLim ):
   totHigh  = max(totLim)
 
   goodWaves = []
-  print("Storing all the good pulses in the box you selected in 'pulses.out'. This may take a while. ")
-  numpulses = float( input("In the meantime, how many pulses do you want to plot?  ") )
+  numpulses = float( input("How many pulses from this region do you want to plot?  ") )
 
   j = 0
   #for  wave in goodWaves:
@@ -137,6 +151,7 @@ def getPulsesFromBox(waves , tailLim , totLim ):
         plt.show()
         plt.close()
 
+  print("Got all the waves in the current region")
   return(goodWaves)
 
 def readGoodInd(fname):
@@ -184,8 +199,10 @@ def scatterDensity(data1 , data2 , labels):
 
 if __name__ == '__main__':
 
-  ##############################################
+  print("Welcome to psdPulseSelect.py! \r\n\r\n")
 
+  ##############################################
+  loud                = False
   dataFile            = sys.argv[1]
   dataType            = DataLoader.DAFCA_STD
   nWavesPerLoad       = 1000
@@ -203,48 +220,72 @@ if __name__ == '__main__':
   total  = []
   ratio  = []
 
-
-  nwaves_ = int(2E6)
+  nwaves_ = int(sys.argv[2])
   datloader = DataLoader( dataFile , dataType , Num_Samples )
   nwaves    = int(datloader.GetNumberOfWavesInFile())
   print( "Found " + str(nwaves) + " pulses in the file. Reading up to " + str( int( nwaves_ ) )+ " ...")
   if nwaves < nwaves_:
     nwaves_ = nwaves
-  Waves = datloader.LoadWaves( int(nwaves_) )
 
-  #plt.ion()
-#  Waves = getwavedata.GetWaveData("psd.ini" , getWaves=True)
+  Waves = datloader.LoadWaves( nwaves_ )
+
+  if loud == True:
+    plt.ion()
+
   j = 0
   pulses = []
   for wave in Waves:
-    j = j +1
     wave = Waveform(wave['Samples'] , polarity, 0 , 3)
     wave.BaselineSubtract()
     tail       = wave.GetIntegralFromPeak(tailIntegralStart  , integralEnd) * VperLSB * ns_per_sample
     wave.total = wave.GetIntegralFromPeak(totalIntegralStart , integralEnd) * VperLSB * ns_per_sample
-    wave.ratio = tail / wave.total
+    wave.ratio = tail / (wave.total +0.000001)
     if wave.ratio >= 0 and wave.ratio < 1 and wave.total >=0 and wave.total < 30 and wave.isDouble(False) == False:
       total.append(wave.total)
       ratio.append(wave.ratio)
       pulses.append(wave)
-      #if np.mod(j,55) == 0:
-        #plt.cla()
-  #    if wave.isDouble(False) == True:
-  #      wave.isDouble(True)
-        #plt.plot(range(0,160) , pulses[-1].blsSamples)
-  #      plt.draw()
-   #     plt.pause(0.05)
+      if loud == True:
+        if np.mod(j,55) == 0:
+          plt.cla()
+          wave.isDouble(True)
+          plt.plot(range(0,160) , pulses[-1].blsSamples)
+          plt.draw()
+          plt.pause(0.05)
 
- # plt.ioff()
- # plt.close()
+  if loud == True:
+    plt.ioff()
+    plt.close()
+
+  again = True
+  avPulses = []
+  regions  = []
+  while again == True:
+    xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
+    xmin , xmax = min(xlim) , max(xlim)
+    ymin , ymax = min(ylim) , max(ylim)
+
+    xlim = [xmin , xmax]
+    ylim = [ymin , ymax]
+    print("Selected area: Total: [" + str(xmin) + " , " + str(xmax) + "] V ns" + ", Ratio: [" + str(ymin) + " , " + str(ymax) + "]" )
+    region_pulses = getPulsesFromBox(pulses , ylim , xlim )
+    region_name = str(raw_input("What would you like to call this region? "))
+    regions.append(region_name)
+
+    writem      = booleanize(raw_input("would you like to write all the pulses in "  + region_name+ " to " + region_name + "_pulses.out? [y/n] "))
+    getTemplate = booleanize(raw_input("would you like to generate a template pulse for the region? [y/n] "))
+    if writem == True:
+      writePulses(region_pulses)
+    if getTemplate == True:
+      avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] ) * 2 /( 2**( number_of_bits) - 1) )
+      avPulses.append(avpulse)
+      out = region_name + "template.out"
+      writePulse(avpulse , out , 1 , xlim , ylim)
+
+    again = booleanize(raw_input("Would you like to select another region? [y/n]"))
+    print("\r\n")
+
+  if regions != [] and avPulses != []:
+    print("\r\n Comparing pulse templates in each region")
+    compPulses( avPulses , regions , ns_per_sample )
 
 
-  xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
-  xmin , xmax = min(xlim) , max(xlim)
-  ymin , ymax = min(ylim) , max(ylim)
-
-  xlim = [xmin , xmax]
-  ylim = [ymin , ymax]
-  print("Selected area: Total: [" + str(xmin) + " , " + str(xmax) + "] V ns" + ", Ratio: [" + str(ymin) + " , " + str(ymax) + "]" )
-  pulses = getPulsesFromBox(pulses , ylim , xlim)
-  writePulses(pulses)

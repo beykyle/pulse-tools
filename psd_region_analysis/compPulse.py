@@ -14,23 +14,27 @@ def read(fi):
 
   return(np.array(a))
 
+def compPulses(pulses , regionNames , ns_per_sample):
+  time = np.linspace(0,len(pulses[0]),len(pulses[0]) )*ns_per_sample
+  for region , pulse in zip(regionNames , pulses):
+    plt.semilogy(time, pulse , label=str(region))
 
-neutfi = "av_neutron_235.out"
-gamfi = "av_gamma_235.out"
-aphi = "av_alpha_235.out"
+  plt.xlabel("Time [ns]")
+  plt.ylabel("Signal [V]")
+  plt.legend()
+  plt.show()
 
-time = np.linspace(0,160,160)*2
+if __name__ == '__main__':
+  neutfi = "av_neutron.out"
+  gamfi = "av_gamma.out"
+  aphi = "av_alpha.out"
 
-ne = read(neutfi)
-ga = read(gamfi)
-ap = read(aphi)
+  time = np.linspace(0,160,160)*2
 
-plt.semilogy(time,ne , 'b' , label='neutron')
-plt.semilogy(time,ga , 'r' , label='gamma')
-plt.semilogy(time,ap , 'g' , label='alpha')
-plt.xlabel("Time [ns]")
-plt.legend()
-plt.show()
+  ne = read(neutfi)
+  ga = read(gamfi)
+  ap = read(aphi)
 
+  compPulses( [ne , ga , ap]  ,['neutron' , 'gamma' , 'alpha'] , 2)
 
 

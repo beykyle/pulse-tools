@@ -13,7 +13,9 @@ import platform
 import time
 import configparser
 
-def GetWaveData(configFileName, getZeroCrossingIntegral=True):
+from matplotlib import pyplot as plt
+
+def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True):
     startTime = time.time()
     print("Running GetWaveData!")
     print("Starting at " + time.strftime('%H:%M:%S'))
@@ -83,6 +85,7 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
     # Setup data loader
     waveform = Waveform(np.zeros(nSamples), polarity, baselineOffset, nBaselineSamples)
 
+    pulses = []
     # Queue up waves
     for f in range(startFolder, startFolder+nFolders):
         print('Folder {}:'.format(f))
@@ -105,28 +108,36 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True):
                 wavesThisLoad = nWavesPerLoad
             waves = datloader.LoadWaves(wavesThisLoad)
             for w in range(wavesThisLoad):
-                ch = waves[w]['Channel']
-                waveform.SetSamples(waves[w]['Samples'])
-                if applyCRRC4:
-                    waveform.ApplyCRRC4(ns_per_sample, CRRC4Tau)
-                if getZeroCrossingIntegral:
-                    ph[ch][chCount[ch]] = waveform.GetIntegralToZeroCrossing()*VperLSB*ns_per_sample
-                amp[ch][chCount[ch]] = waveform.GetMax()
-                tailInt[ch][chCount[ch]] = waveform.GetIntegralFromPeak(tailIntegralStart,integralEnd)*VperLSB*ns_per_sample
-                totalInt[ch][chCount[ch]] = waveform.GetIntegralFromPeak(totalIntegralStart,integralEnd)*VperLSB*ns_per_sample
-                cfd[ch][chCount[ch]] = waveform.GetCFDTime(cfdFraction)*ns_per_sample
-                ttt[ch][chCount[ch]] = waves[w]['TimeTag']
-                rms[ch][chCount[ch]] = waveform.GetRMSbls(nBaselineSamples)
-                if dataFormatStr == 'DPP_MIXED':
+                if getWaves == False:
+                  ch = waves[w]['Channel']
+                  chCount[ch] += 1
+                  waveform.SetSamples(waves[w]['Samples'])
+                  if applyCRRC4:
+                      waveform.ApplyCRRC4(ns_per_sample, CRRC4Tau)
+                  if getZeroCrossingIntegral:
+                      ph[ch][chCount[ch]] = waveform.GetIntegralToZeroCrossing()*VperLSB*ns_per_sample
+                  amp[ch][chCount[ch]] = waveform.GetMax()
+                  tailInt[ch][chCount[ch]] = waveform.GetIntegralFromPeak(tailIntegralStart,integralEnd)*VperLSB*ns_per_sample
+                  totalInt[ch][chCount[ch]] = waveform.GetIntegralFromPeak(totalIntegralStart,integralEnd)*VperLSB*ns_per_sample
+                  cfd[ch][chCount[ch]] = waveform.GetCFDTime(cfdFraction)*ns_per_sample
+                  ttt[ch][chCount[ch]] = waves[w]['TimeTag']
+                  rms[ch][chCount[ch]] = waveform.GetRMSbls(nBaselineSamples)
+                  if dataFormatStr == 'DPP_MIXED':
                     extras[ch][chCount[ch]] = waves[w]['Extras']
                     fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] +
                                                 ((waves[w]['Extras'] & 0xFFFF0000)
                                                 << 15)))*ns_per_sample
-#                    fullTime[ch][chCount[ch]] = ((waves[w]['TimeTag'] +
-#                                                ((waves[w]['Extras'] & 0xFFFF0000)
-#                                                << 15)) + fileTimeGap*f)*ns_per_sample
-                chCount[ch] += 1
+                else:
+                  waveform = Waveform(waves[w]['Samples'] , polarity , baselineOffset , nBaselineSamples)
+                  waveform.BaselineSubtract()
+                  pulses.append(waveform)
+
+
     endTime = time.time()
     runTime = endTime - startTime
     print("GetWaveData took {} s".format(runTime))
-    return chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms
+    if getWaves == False:
+      return chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms
+    else:
+      return pulses
+
