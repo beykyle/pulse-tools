@@ -3,6 +3,8 @@ A collection of tools for analyzing list mode organic scintillator pulses and ch
 ## psd_region_analysis
 An interactive GUI that allows a user to select a region from a pulse shape discrimination plot (scatter density plot of the total pulse integral to tail/total ratio) to view and save pulses from. 
 Useful for identifying if a region on your plot is due to a particle interaction, clipped or malformed pulses, double pulses, or what have you.
+## pulse_classification
+A collection of methods for classifying pulses as good/clipped/double etc.
 ## spec_broadening
 A collection of scripts useful for finding energy resolution and gain (e.g. pulse integral [V-ns] to light output [MeVee] conversion) 
 for organic, Compton scatter based, scintillators by iteratively convolving 
