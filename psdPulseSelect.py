@@ -9,7 +9,6 @@ of the plot
 
 import numpy as np
 import sys
-import dataloader
 from matplotlib import pyplot as plt
 from matplotlib.widgets  import RectangleSelector
 from matplotlib.patches import Rectangle
@@ -30,8 +29,9 @@ pywaves_directory = "./"
 
 sys.path.extend([pywaves_directory])
 
-from dataloader import DataLoader
+from dataloader  import DataLoader
 from getwavedata import GetWaveData
+from waveform    import Waveform
 
 class Annotate(object):
   def __init__(self):
@@ -108,23 +108,12 @@ def readPulses(config):
 
   return(tail , total , ratio)
 
-def getPulsesFromBox(tailLim , totLim , fpath , goodInd):
+def getPulsesFromBox(waves , tailLim , totLim , fpath , goodInd):
 
   tailLow  = min(tailLim)
   tailHigh = max(tailLim)
   totLow   = min(totLim)
   totHigh  = max(totLim)
-
-  ##############################################
-
-  dataType = DataLoader.DAFCA_DPP_MIXED
-  Num_Samples = 160
-
-  ##############################################
-
-  Data   = DataLoader( fpath , dataType , Num_Samples )
-  nwaves = Data.GetNumberOfWavesInFile()
-  Waves  = Data.LoadWaves(nwaves)
 
   print("Found " + str(nwaves) + " waves, with " + str(len(goodInd)) + " good ones.")
 
@@ -139,21 +128,19 @@ def getPulsesFromBox(tailLim , totLim , fpath , goodInd):
       goodWaves.append(Waves[i])
 
   j = 0
-  for  wave in goodWaves:
-    #print(wave)
+  #for  wave in goodWaves:
+  for wave in Waves:
+  #print(wave)
     baseline  = np.average(wave['Samples'][0:5])
     bswave    = baseline - wave['Samples']
     maxInd    = np.where(bswave == max(bswave) )[0][0]
 
-    dynamic_range_volts = 0.5
-    number_of_bits      = 15
-    VperLSB             = dynamic_range_volts/(2**number_of_bits)
 
     total      = np.sum( bswave          )*2*VperLSB
     tail       = np.sum( bswave[maxInd:] )*2*VperLSB
     ratio = tail / total
 
-    #print("Total: " + str(total) + " ratio: " + str(ratio))
+  #  print("Total: " + str(total) + " ratio: " + str(ratio))
 
     if( total >= totLow and total <= totHigh and ratio >= tailLow and ratio <= tailHigh ):
       pulses.append(bswave)
@@ -195,7 +182,7 @@ def scatterDensity(data1 , data2 , labels):
     ax.add_patch(rect)
 
   fig , ax = plt.subplots()
-  dat  = plt.hist2d(data1, data2, (1000, 1000), cmap=plt.cm.cubehelix_r)
+  dat  = plt.hist2d(data1, data2, (1000, 1000), cmap=plt.cm.jet_r)
   plt.colorbar()
   plt.xlabel(labels[0])
   plt.ylabel(labels[1])
@@ -210,20 +197,61 @@ def scatterDensity(data1 , data2 , labels):
   print("Select a rectangle corresponding to the region of pulses you want to look at more closely.")
   print("Once you've selected the desired area, close the figure!")
   plt.show()
-  print("Selected area: Total: [" + str(a.x0) + " , " + str(a.x1) + "] V ns" + ", Ratio: [" + str(a.y0) + " , " + str(a.y1) + "]" )
   return([a.x0 , a.x1] , [a.y0 , a.y1])
 
 if __name__ == '__main__':
-  psdFile      = sys.argv[1]
-  dataFile     = sys.argv[2]
-  goodIndFile  = sys.argv[3]
 
-  goodIndices  = readGoodInd(goodIndFile)
+  ##############################################
 
-  total , tail , ph , ratio = readPSD(psdFile)
-  xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
+  dataFile            = sys.argv[1]
+  dataType            = DataLoader.DAFCA_DPP_MIXED
+  nWavesPerLoad       = 1000
+  Num_Samples         = 160
+  dynamic_range_volts = 0.5
+  number_of_bits      = 15
+  VperLSB             = dynamic_range_volts/(2**number_of_bits)
+  ns_per_sample       = 2
+  tailIntegralStart   = 12
+  integralEnd         = 100
+  totalIntegralStart  = -3
+  polarity            = -1
+
+  ##############################################
+  total  = []
+  ratio  = []
+
+
+  datloader = DataLoader( dataFile , dataType , Num_Samples )
+  nwaves    = datloader.GetNumberOfWavesInFile()
+  print( "Found " + str(nwaves) + "pulses in the file. Reading up to 1E5...")
+  if nwaves < 1E4:
+    Waves = datloader.LoadWaves(nwaves)
+  else:
+    Waves = datloader.LoadWaves( int(1E4) )
+
+  pulses = []
+  for w in Waves:
+    wave = Waveform(w['Samples'] , polarity , 1 , 5 )
+    tail       = wave.GetIntegralFromPeak(tailIntegralStart  , integralEnd) * VperLSB * ns_per_sample
+    wave.total = wave.GetIntegralFromPeak(totalIntegralStart , integralEnd) * VperLSB * ns_per_sample
+    wave.ratio = tail / wave.total
+    total.append(wave.total)
+    ratio.append(wave.ratio)
+    pulses.append(wave)
+
+  for pulse in pulses[1:10]:
+    #plt.plot( range(0 , len(pulse.samples)) , pulse.blsSamples)
+    #plt.show()
+    print(pulse.total)
+
+  #xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
+  #xmin , xmax = min(xlim) , max(xlim)
+  #ymin , ymax = min(ylim) , max(ylim)
+
+  #xlim = [8 , 10]
+  #ylim = [ymin , ymax]
+  #print("Selected area: Total: [" + str(xmin) + " , " + str(xmax) + "] V ns" + ", Ratio: [" + str(ymin) + " , " + str(ymax) + "]" )
+
 
   #xlim , ylim = [-0.02 , 10.3281931632], [-0.02 , 10]
-
-  pulses = getPulsesFromBox( xlim , ylim , dataFile , goodIndices)
-  writePulses(pulses)
+  #writePulses(pulses)
