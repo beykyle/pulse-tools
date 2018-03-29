@@ -38,4 +38,4 @@ and a second config file is required. In this case, the familiarity of the user 
 is assumed. If this is not the case, provide experimental spectra in the form of a comma seperated, 2 column file, 
 as specified above.
 ## low_level
-Handles the low level reading of CAEN digitizer data files. I am not the author of these.
+Handles the low level reading of CAEN digitizer data files. I am not the original author of these.
