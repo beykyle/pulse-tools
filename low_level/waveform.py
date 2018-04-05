@@ -10,8 +10,10 @@ from numpy import mean, sqrt, square
 from matplotlib import pyplot as plt
 
 class Waveform:
-    def __init__(self, samples, polarity, baselineOffset, nBaselineSamples):
+    def __init__(self, samples, polarity, baselineOffset, nBaselineSamples , ch=0 , time=0):
         self.samples          = samples
+        self.ch               = ch
+        self.time             = time
         self.polarity         = polarity
         self.baselineOffset   = baselineOffset
         self.nBaselineSamples = nBaselineSamples
