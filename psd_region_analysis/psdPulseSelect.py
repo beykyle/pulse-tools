@@ -171,7 +171,7 @@ def writePulses(pulses , region_name):
         out.write('{:1.5f}'.format(sample) + ',')
       out.write("\r\n")
 
-def writeTiming(pulses):
+def writeTiming(pulses , region_name):
   with open( region_name + "_timing.out" , "w") as out:
     for pulse in pulses:
       out.write(str(pulse.ch) + ',' + '{:1.8E}'.format(pulse.time) + "\r\n" )
@@ -288,9 +288,9 @@ if __name__ == '__main__':
     timing      = booleanize(input("would you like to write timing data and channel in "  + region_name+ " to " + region_name + "_timing.out? [y/n] "))
     getTemplate = booleanize(input("would you like to generate a template pulse for the region? [y/n] "))
     if writem == True:
-      writePulses(region_pulses)
+      writePulses(region_pulses , region_name)
     if timing == True:
-      writeTiming(region_pulses)
+      writeTiming(region_pulses , region_name)
     if getTemplate == True:
       avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] ) * 2 /( 2**( number_of_bits) - 1) )
       avPulses.append(avpulse)
