@@ -164,12 +164,17 @@ def readGoodInd(fname):
 
   return(good)
 
-def writePulses(pulses):
-  with open("pulses.out" , "w") as out:
+def writePulses(pulses , region_name):
+  with open( region_name + "_pulses.out" , "w") as out:
     for pulse in pulses:
       for sample in pulse.blsSamples:
         out.write('{:1.5f}'.format(sample) + ',')
       out.write("\r\n")
+
+def writeTiming(pulses , region_name):
+  with open( region_name + "_timing.out" , "w") as out:
+    for pulse in pulses:
+      out.write(str(pulse.ch) + ',' + '{:1.8E}'.format(pulse.time) + "\r\n" )
 
 def scatterDensity(data1 , data2 , labels):
   def line_select_callback(eclick, erelease ):
@@ -204,17 +209,17 @@ if __name__ == '__main__':
   ##############################################
   loud                = False
   dataFile            = sys.argv[1]
-  dataType            = DataLoader.DAFCA_STD
+  dataType            = DataLoader.DAFCA_DPP_MIXED
   nWavesPerLoad       = 1000
-  Num_Samples         = 160
+  Num_Samples         = 440
   dynamic_range_volts = 0.5
-  number_of_bits      = 15
+  number_of_bits      = 14
   VperLSB             = dynamic_range_volts/(2**number_of_bits)
   ns_per_sample       = 2
   tailIntegralStart   = 20
   integralEnd         = 100
   totalIntegralStart  = -3
-  polarity            = -1
+  polarity            = 1
 
   ##############################################
   total  = []
@@ -229,13 +234,19 @@ if __name__ == '__main__':
 
   Waves = datloader.LoadWaves( nwaves_ )
 
+
   if loud == True:
     plt.ion()
+    for i in range(0 , len(Waves) , int(nwaves_ / 100) ):
+      wave = Waveform(Waves[i]['Samples'] , polarity, 0 , 3 , ch=Waves[i]["Channel"] , time=Waves[i]["TimeTag"])
+      wave.BaselineSubtract()
+      wave.isDouble(True)
+      plt.cla()
 
   j = 0
   pulses = []
   for wave in Waves:
-    wave = Waveform(wave['Samples'] , polarity, 0 , 3)
+    wave = Waveform(wave['Samples'] , polarity, 0 , 3 , ch=wave["Channel"] , time=wave["TimeTag"])
     wave.BaselineSubtract()
     tail       = wave.GetIntegralFromPeak(tailIntegralStart  , integralEnd) * VperLSB * ns_per_sample
     wave.total = wave.GetIntegralFromPeak(totalIntegralStart , integralEnd) * VperLSB * ns_per_sample
@@ -248,9 +259,11 @@ if __name__ == '__main__':
         if np.mod(j,55) == 0:
           plt.cla()
           wave.isDouble(True)
-          plt.plot(range(0,160) , pulses[-1].blsSamples)
+          plt.plot(range(0,Num_Samples) , pulses[-1].blsSamples)
           plt.draw()
           plt.pause(0.05)
+
+  print(len(pulses))
 
   if loud == True:
     plt.ioff()
@@ -268,20 +281,23 @@ if __name__ == '__main__':
     ylim = [ymin , ymax]
     print("Selected area: Total: [" + str(xmin) + " , " + str(xmax) + "] V ns" + ", Ratio: [" + str(ymin) + " , " + str(ymax) + "]" )
     region_pulses = getPulsesFromBox(pulses , ylim , xlim )
-    region_name = str(raw_input("What would you like to call this region? "))
+    region_name = str(input("What would you like to call this region? "))
     regions.append(region_name)
 
-    writem      = booleanize(raw_input("would you like to write all the pulses in "  + region_name+ " to " + region_name + "_pulses.out? [y/n] "))
-    getTemplate = booleanize(raw_input("would you like to generate a template pulse for the region? [y/n] "))
+    writem      = booleanize(input("would you like to write all the pulses in "  + region_name+ " to " + region_name + "_pulses.out? [y/n] "))
+    timing      = booleanize(input("would you like to write timing data and channel in "  + region_name+ " to " + region_name + "_timing.out? [y/n] "))
+    getTemplate = booleanize(input("would you like to generate a template pulse for the region? [y/n] "))
     if writem == True:
-      writePulses(region_pulses)
+      writePulses(region_pulses , region_name)
+    if timing == True:
+      writeTiming(region_pulses , region_name)
     if getTemplate == True:
       avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] ) * 2 /( 2**( number_of_bits) - 1) )
       avPulses.append(avpulse)
       out = region_name + "template.out"
       writePulse(avpulse , out , 1 , xlim , ylim)
 
-    again = booleanize(raw_input("Would you like to select another region? [y/n]"))
+    again = booleanize(input("Would you like to select another region? [y/n]"))
     print("\r\n")
 
   if regions != [] and avPulses != []:

@@ -128,7 +128,8 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True):
                                                 ((waves[w]['Extras'] & 0xFFFF0000)
                                                 << 15)))*ns_per_sample
                 else:
-                  waveform = Waveform(waves[w]['Samples'] , polarity , baselineOffset , nBaselineSamples)
+                  print(waves[w]['TimeTag'])
+                  waveform = Waveform( waves[w]['Samples'] , polarity , baselineOffset , nBaselineSamples , ch=waves[w]['Channel'] , time=waves[w]['TimeTag'])
                   waveform.BaselineSubtract()
                   pulses.append(waveform)
 

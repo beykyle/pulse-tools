@@ -10,8 +10,10 @@ from numpy import mean, sqrt, square
 from matplotlib import pyplot as plt
 
 class Waveform:
-    def __init__(self, samples, polarity, baselineOffset, nBaselineSamples):
+    def __init__(self, samples, polarity, baselineOffset, nBaselineSamples , ch=0 , time=0):
         self.samples          = samples
+        self.ch               = ch
+        self.time             = time
         self.polarity         = polarity
         self.baselineOffset   = baselineOffset
         self.nBaselineSamples = nBaselineSamples
@@ -39,7 +41,7 @@ class Waveform:
             if(self.maxIndex < self.baselineOffset+self.nBaselineSamples):
                 self.badPulse = True
                 return
-            self.baseline = np.average(self.samples[self.maxIndex-self.baselineOffset-self.nBaselineSamples:self.maxIndex-self.baselineOffset])
+            self.baseline = np.average(self.samples[0:self.nBaselineSamples])
             self.blsSamples = self.samples - self.baseline
         else: # Negative pulse
             self.maxIndex = np.argmin(self.samples)
@@ -127,8 +129,8 @@ class Waveform:
       # needs to be optimized
       if not self.baselined:
         self.BaselineSubtract()
-      if self.badPulse:
-        return - 1
+      if self.badPulse == True:
+        return (True)
       if self.height == -1:
         self.height = np.max(self.blsSamples)
 
@@ -157,11 +159,9 @@ class Waveform:
         if xi < xm:
           if y > lowerCutoff[xi]:
             self.badPulse == True
-            return(True)
         if xi >= xm:
           if y > upperCutoff[xi - xm]:
             self.badPulse == True
-            return(True)
 
       if show == True:
         print("plotting")
@@ -173,9 +173,10 @@ class Waveform:
         plt.legend()
         if self.badPulse == True:
           plt.title("Double!!")
-        plt.show()
+        plt.draw()
+        plt.pause(0.05)
 
-      return(False)
+      return(self.badPulse)
 
 
 
