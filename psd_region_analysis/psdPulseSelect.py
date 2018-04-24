@@ -240,7 +240,7 @@ if __name__ == '__main__':
     tail       = wave.GetIntegralFromPeak(tailIntegralStart  , integralEnd) * VperLSB * ns_per_sample
     wave.total = wave.GetIntegralFromPeak(totalIntegralStart , integralEnd) * VperLSB * ns_per_sample
     wave.ratio = tail / (wave.total +0.000001)
-    if wave.ratio >= 0 and wave.ratio < 1 and wave.total >=0 and wave.total < 30 and wave.isDouble(False) == False:
+    if wave.ratio >= 0 and wave.ratio < 1 and wave.total >=0 and wave.total < 30:# and wave.isDouble(False) == False:
       total.append(wave.total)
       ratio.append(wave.ratio)
       pulses.append(wave)
