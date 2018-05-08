@@ -6,6 +6,7 @@
 
 import numpy as np
 import scipy.signal as signal
+import scipy.stats as stats
 from numpy import mean, sqrt, square
 from matplotlib import pyplot as plt
 
@@ -125,6 +126,12 @@ class Waveform:
                 return (targetVal-tSamples[loopIndex])/(tSamples[loopIndex+1]-tSamples[loopIndex]) + loopIndex
         return -1
 
+    def getStdDev(self):
+      return(np.std(self.blsSamples))
+
+    def getKurtosis(self):
+      return(stats.kurtosis(self.blsSamples))
+
     def isDouble(self , show):
       # needs to be optimized
       if not self.baselined:
@@ -164,7 +171,6 @@ class Waveform:
             self.badPulse == True
 
       if show == True:
-        print("plotting")
         plt.plot( x , self.blsSamples)
         plt.plot( x[:xm] , lowerCutoff , label="cutoff")
         plt.plot( x[xm:] , upperCutoff , label="cutoff")

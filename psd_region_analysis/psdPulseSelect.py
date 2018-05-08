@@ -313,18 +313,15 @@ if __name__ == '__main__':
 
   if len(sys.argv) > 2:
     loud = booleanize(sys.argv[2])
-    chCount, tailInt, totalInt, pulses = GetWaveData(configFileName , getWaves=True , loud=loud)
+    chCount, timing , data , pulses = GetWaveData(configFileName , getWaves=True , loud=loud)
   else:
-    chCount, tailInt, totalInt, pulses = GetWaveData(configFileName , getWaves=True , loud=False)
+    chCount, timing , data , pulses = GetWaveData(configFileName , getWaves=True , loud=False)
+
 
   total      = []
   ratio      = []
   goodPulses = []
-  tail     = tailInt[0]
-  oldtotal = totalInt[0]
-
-  print(len(tail))
-  print(len(pulses))
+  tail       = []
 
   for pulse in pulses:
     tot  =  pulse.GetIntegralFromPeak(totalIntegralStart , integralEnd)*VperLSB*ns_per_sample
@@ -358,15 +355,23 @@ if __name__ == '__main__':
     region_name = tryStrInput("What would you like to call this region? ")
     regions.append(region_name)
 
-   # writem      = booleanize(raw_input("would you like to write all the pulses in "
-  #                           + region_name+ " to " + region_name + "_pulses.out? [y/n] ")
- #                           )
+    writem      = tryBoolInput("would you like to write all the pulses in " + region_name+ " to " + region_name + "_pulses.out? [y/n] ")
+    if writem == True:
+      writePulses(region_pulses , region_name)
 
    # timing      = booleanize(raw_input("would you like to write timing data and channel in "
-#                             + region_name+ " to " + region_name + "_timing.out? [y/n] ")
-    #                        )
+   #                             + region_name+ " to " + region_name + "_timing.out? [y/n] ")
+   #                        )
+   # if timing == True:
+   #  writeTiming(region_pulses , region_name)
 
     getTemplate   = tryBoolInput("would you like to generate a template pulse for the region? [y/n] ")
+    if getTemplate == True:
+      avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] )
+                          * VperLSB * ns_per_sample )
+      avPulses.append(avpulse)
+      out = outPath + region_name + "template.out"
+      writePulse(avpulse , out , 1 , totLim , ratioLim)
 
     getDoubleFrac = tryBoolInput("would you like to calculate the double pulse fraction for the region? [y/n] ")
     if getDoubleFrac == True:
@@ -386,20 +391,6 @@ if __name__ == '__main__':
         regionstd , regionkurt = getPulseWidth(region_pulses)
         plotPulseWidths(regionstd , regionkurt , region_name)
 
-    #if writem == True:
-    #  writePulses(region_pulses , region_name)
-
-    #if timing == True:
-    #  writeTiming(region_pulses , region_name)
-
-    if getTemplate == True:
-      avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] )
-                          * VperLSB * ns_per_sample
-                        )
-
-      avPulses.append(avpulse)
-      out = outPath + region_name + "template.out"
-      writePulse(avpulse , out , 1 , totLim , ratioLim)
 
     again = tryBoolInput("Would you like to select another region? [y/n]")
     print("\r\n")
