@@ -9,14 +9,17 @@ import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import math
-import dataloader
-import getwavedata
 import configparser
 from scipy.ndimage.filters import gaussian_filter1d as gfilter
 from scipy.optimize import curve_fit as fit
 from scipy.signal import savgol_filter as savgol
 from scipy.signal import find_peaks_cwt as peaks
 from lmfit import Model
+
+sys.path.append("../low_level/")
+
+import dataloader
+import getwavedata
 
 __author__ = "Kyle Beyer"
 __version__ = "1.0.1"
@@ -69,7 +72,7 @@ class Experiment:
             print("\n Now calibrating " + keys[i])
             edges = self.findComptonEdges(bins , hist , keys[i])
             energy = self.calibrate(bins , edges)
-            energies.append(energy[1:])
+            energies.append(energy)
 
             if self.loud == True:
 
@@ -112,7 +115,7 @@ class Experiment:
     def readFromFile(self , config  , detectors , keys):
         spec = []
         volts = []
-        chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms = getwavedata.GetWaveData(config)
+        chCount, ph, amp, tailInt, totalInt, cfd, ttt, extras, fullTime, flags, rms = getwavedata.GetWaveData(config , getWaves=False)
         self.numChannels = len(chCount)
         print("\n \n Read pulse integrated spectra from " + str(self.numChannels) + " channels. \n")
 
@@ -194,9 +197,9 @@ class Experiment:
         peakw = int(math.ceil(self.bins/20))
         peakid  = peaks( nhist ,  [peakw , peakw + 1 , peakw+2] )
         peakid2 = peaks( diff2 ,  [peakw , peakw + 1 , peakw+2] )
-        if len(peakid) < 3 or len(peakid2) < 3:
-            raise NotImplementedError("Compton edges couldn't be found, and manual selection hasn't been implemented. Try again with more data!")
-            return(0)
+        #if len(peakid) < 3 or len(peakid2) < 3:
+         #   raise NotImplementedError("Compton edges couldn't be found, and manual selection hasn't been implemented. Try again with more data!")
+          #  return(0)
 
         if self.loud == True:
             fig = plt.figure()
@@ -298,8 +301,12 @@ class ResolutionFitter:
         else:
             return 0.1
 
-    def gaussianKernel(self , erg ,  a , shift):
+    def gaussianKernel(self , erg ,  a  , shift):
         gauss = np.exp( -(self.energy - shift)**2 * (1.6651092223) / (self.kernelFWHM(erg , a ) ) )
+        return(gauss / np.sum(gauss) )
+
+    def simpleKernel(self ,  a  , shift):
+        gauss = np.exp( -(self.energy - shift)**2 * (1.6651092223) / a )
         return(gauss / np.sum(gauss) )
 
     def convolveWithGaussian(self , x , a , d , shift):
@@ -311,8 +318,14 @@ class ResolutionFitter:
 
         return( convolved[0:n] )
 
+    def simpleConvolve(self, x , a , d , shift):
+      conv = d*np.convolve( x , self.simpleKernel(a , shift))
+      print(len(conv))
+      print(conv)
+      return(conv)
+
     def runFit(self , simulated , experimental , a0 , d0 , shift0 , key):
-        popt , pcov = fit(self.convolveWithGaussian, simulated, experimental, p0 = (a0 , d0 , shift0), bounds = ((0 , 0 , 0) , (1000 , 1000 ,1000) ))
+        popt , pcov = fit(self.convolveWithGaussian , simulated, experimental, p0 = (a0 , d0 , shift0), bounds = ((0 , 0 , 0) , (10 , 10 ,1) ))
         broadened = self.convolveWithGaussian(simulated , *popt)
 
         print(key + ":  fwhm= " , popt[0]  , "+/- " , pcov[0][0] ," ",
@@ -320,13 +333,6 @@ class ResolutionFitter:
               ", horizontal shift= " , popt[2]  , "+/- " , pcov[2][2] ," ")
 
         return(broadened , popt , pcov)
-
-    def runLMfit(self , simulated , experimental , initial):
-        gmodel = Model(self.convolveWithGaussian)
-        print(gmodel.param_names)
-        print(gmodel.independent_vars)
-        result = gmodel.fit(experimental , x=simulated , a=initial[0] , b=initial[1] , c=initial[2] , d=1)
-        print(result.fit_report())
 
     def runAll(self , detectors):
         for key , value in detectors.items():
@@ -357,11 +363,22 @@ class Detector:
         self.expEnergy = np.array(energy)[1:]
 
     def setSimSpec(self , energy , simSpec):
-        self.simSpec =savgol(  np.array(simSpec) , 7 , 3)
+        self.simSpec   = np.array(simSpec)
         self.simEnergy = np.array(energy)
 
     def setChannels(self , channels):
         self.channels = channels
+
+    def interp(self , lines , bounds=[0.2 , 0.7]):
+        self.simSpec = self.simSpec / max(self.simSpec)
+        self.expSpec = self.expSpec / max(self.expSpec)
+        plt.plot(self.simEnergy , self.simSpec)
+        plt.plot(self.expEnergy , self.expSpec)
+        plt.ylabel("Counts")
+        plt.title(self.name)
+        plt.legend()
+        plt.show()
+
 
     def interpolate(self , lines):
         self.simSpec = self.simSpec / max(self.simSpec)
@@ -369,11 +386,16 @@ class Detector:
 
         #plt.plot(self.simEnergy , self.simSpec)
         #plt.plot(self.expEnergy , self.expSpec)
+        #plt.ylabel("Counts")
+        #plt.title(self.name)
+        #plt.legend()
+        ##plt.show()
         # we can only go from the largest min energy bin to the smallest max energy bin
 
         #elow = min( self.expEnergy[0] , self.simEnergy[0])
         elow = 0.2
-        ehigh = min( self.expEnergy[-1] , self.simEnergy[-1])
+        ehigh = 0.7
+        #ehigh = min( self.expEnergy[-1] , self.simEnergy[-1])
 
         lowExpInd = np.where( np.abs( self.expEnergy - elow) ==  np.abs( self.expEnergy - elow ).min() )
         lowSimInd = np.where( np.abs( self.simEnergy - elow) ==  np.abs( self.simEnergy - elow ).min() )
@@ -540,7 +562,6 @@ if __name__ == '__main__':
                 b , h  = [ float(x.strip()) for x in line.split(" , ") ]
                 bins.append(b)
                 hist.append(h)
-
             value.setSimSpec(bins , hist)
 
     res = ResolutionFitter(lines)
