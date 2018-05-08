@@ -17,8 +17,8 @@ def read(fi):
 def compPulses(pulses , regionNames , ns_per_sample):
   time = np.linspace(0,len(pulses[0]),len(pulses[0]) )*ns_per_sample
   for region , pulse in zip(regionNames , pulses):
-    #plt.semilogy(time, pulse , label=str(region))
-    plt.plot(time, pulse , label=str(region))
+    plt.semilogy(time, pulse / max(pulse) , label=str(region))
+    #plt.plot(time, pulse , label=str(region))
 
   plt.xlabel("Time [ns]")
   plt.ylabel("Signal [V]")

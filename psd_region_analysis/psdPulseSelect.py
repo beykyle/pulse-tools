@@ -8,10 +8,12 @@ of the plot
 """
 import numpy as np
 import sys
+import scipy.stats as stats
 from matplotlib import pyplot as plt
 from matplotlib.widgets  import RectangleSelector
 from matplotlib.patches import Rectangle
 from scipy.stats import gaussian_kde
+import configparser
 
 __author__ = "Kyle Beyer"
 __version__ = "1.0.1"
@@ -125,23 +127,23 @@ def readPulses(config):
 
   return(tail , total , ratio)
 
-def getPulsesFromBox(waves , tailLim , totLim  ):
-
-  tailLow  = min(tailLim)
-  tailHigh = max(tailLim)
+def getPulsesFromBox(waves , ratioLim , totLim  ):
+  ratLow  = min(ratioLim)
+  ratHigh = max(ratioLim)
   totLow   = min(totLim)
   totHigh  = max(totLim)
 
   goodWaves = []
-  numpulses = float( input("How many pulses from this region do you want to plot?  ") )
+  numpulses = tryIntInput("How many pulses from this region do you want to plot?  ")
 
   j = 0
   #for  wave in goodWaves:
   for wave in waves:
-    if( wave.total >= totLow and wave.total <= totHigh and wave.ratio >= tailLow and wave.ratio <= tailHigh ):
+    if( wave.total >= totLow and wave.total <= totHigh and wave.ratio >= ratLow and wave.ratio <= ratHigh ):
       goodWaves.append(wave)
       #plot the pulse
       if j < numpulses:
+        print("plotting pulse with total: " + str(wave.total) +  " and ratio: " + str(wave.ratio) )
         j = j + 1
         x = range(0,len(wave.blsSamples))
         y = wave.blsSamples
@@ -151,7 +153,7 @@ def getPulsesFromBox(waves , tailLim , totLim  ):
         plt.show()
         plt.close()
 
-  print("Got all the waves in the current region")
+  print("Got all " + str(len(goodWaves)) + " waves in the current region")
   return(goodWaves)
 
 def readGoodInd(fname):
@@ -165,16 +167,60 @@ def readGoodInd(fname):
   return(good)
 
 def writePulses(pulses , region_name):
-  with open( region_name + "_pulses.out" , "w") as out:
+  with open( outPath + region_name + "_pulses.out" , "w") as out:
     for pulse in pulses:
       for sample in pulse.blsSamples:
         out.write('{:1.5f}'.format(sample) + ',')
       out.write("\r\n")
 
 def writeTiming(pulses , region_name):
-  with open( region_name + "_timing.out" , "w") as out:
+  with open( outPath + region_name + "_timing.out" , "w") as out:
     for pulse in pulses:
       out.write(str(pulse.ch) + ',' + '{:1.8E}'.format(pulse.time) + "\r\n" )
+
+def writeShaping(std , kurt , region_name):
+  with open( outPath + region_name + "_std.out" , "w") as out:
+    for s in std:
+      out.write(str(s) +"\r\n" )
+  with open( outPath + region_name + "_kurt.out" , "w") as out:
+    for k in kurt:
+      out.write(str(k) +"\r\n" )
+
+def findDoubleFrac(pulses):
+  doubles = 0
+  goods   = 0
+  for pulse in pulses:
+    if pulse.isDouble(False) == True:
+      doubles += 1
+    else:
+      goods += 1
+
+  return(doubles / (goods + doubles))
+
+def getPulseWidth(pulses):
+  std  = []
+  kurt = []
+  for pulse in pulses:
+    waveform = pulse.blsSamples / max(pulse.blsSamples)
+    std.append(  np.std(waveform)         )
+    kurt.append( stats.kurtosis(waveform) )
+  return(std,kurt)
+
+def plotPulseWidths(kurt , std , region_name):
+  plt.figure()
+  plt.subplot(121)
+  plt.hist(std , 20)
+  plt.xlabel("pulse standard deviation [V]")
+  plt.ylabel("counts")
+  plt.subplot(122)
+  plt.hist(kurt , 20)
+  plt.xlabel(r"pulse kurtosis")
+  plt.ylabel("counts")
+  plt.tight_layout()
+  plt.savefig(region_name + "_shapes.png" , dpi=500)
+  plt.show()
+  plt.close()
+
 
 def scatterDensity(data1 , data2 , labels):
   def line_select_callback(eclick, erelease ):
@@ -202,106 +248,162 @@ def scatterDensity(data1 , data2 , labels):
 
   return([a.x0 , a.x1] , [a.y0 , a.y1])
 
-if __name__ == '__main__':
+def tryStrInput(string):
+  gotIt = False
+  while gotIt == False:
+    try:
+      var = str(raw_input(string))
+      gotIt = True
+    except ValueError:
+      print("Input could not be interpreted! Try again.")
 
+  return(var)
+
+def tryIntInput(string):
+  gotIt = False
+  while gotIt == False:
+    try:
+      var = int(raw_input(string))
+      gotIt = True
+    except ValueError:
+      print("Input could not be interpreted! Try again.")
+
+  return(var)
+
+def tryFloatInput(string):
+  gotIt = False
+  while gotIt == False:
+    try:
+      var = float(raw_input(string))
+      gotIt = True
+    except ValueError:
+      print("Input could not be interpreted! Try again.")
+
+  return(var)
+
+def tryBoolInput(string):
+  gotIt = False
+  while gotIt == False:
+    try:
+      var = booleanize(raw_input(string))
+      gotIt = True
+    except ValueError:
+      print("Input could not be interpreted! Try again.")
+
+  return(var)
+
+
+
+if __name__ == '__main__':
   print("Welcome to psdPulseSelect.py! \r\n\r\n")
 
-  ##############################################
-  loud                = False
-  dataFile            = sys.argv[1]
-  dataType            = DataLoader.DAFCA_DPP_MIXED
-  nWavesPerLoad       = 1000
-  Num_Samples         = 440
-  dynamic_range_volts = 0.5
-  number_of_bits      = 14
-  VperLSB             = dynamic_range_volts/(2**number_of_bits)
-  ns_per_sample       = 2
-  tailIntegralStart   = 20
-  integralEnd         = 100
-  totalIntegralStart  = -3
-  polarity            = 1
+  configFileName = sys.argv[1]
+  config = configparser.ConfigParser()
+  config.read(configFileName)
 
-  ##############################################
-  total  = []
-  ratio  = []
+  global outPath
+  outPath             = config['Directories']['output_path']
+  dynamic_range_volts = float(config['Digitizer']['dynamic_range_volts'])
+  number_of_bits      = int(config['Digitizer']['number_of_bits'])
+  ns_per_sample       = int(config['Digitizer']['ns_per_sample'])
+  integralEnd         = int(config['Pulse Processing']['integral_end'])
+  totalIntegralStart  = int(config['Pulse Processing']['total_integral_start'])
+  tailIntegralStart   = int(config['Pulse Processing']['tail_integral_start'])
+  VperLSB =  dynamic_range_volts / ( 2**( number_of_bits) - 1)
 
-  nwaves_ = int(sys.argv[2])
-  datloader = DataLoader( dataFile , dataType , Num_Samples )
-  nwaves    = int(datloader.GetNumberOfWavesInFile())
-  print( "Found " + str(nwaves) + " pulses in the file. Reading up to " + str( int( nwaves_ ) )+ " ...")
-  if nwaves < nwaves_:
-    nwaves_ = nwaves
+  if len(sys.argv) > 2:
+    loud = booleanize(sys.argv[2])
+    chCount, tailInt, totalInt, pulses = GetWaveData(configFileName , getWaves=True , loud=loud)
+  else:
+    chCount, tailInt, totalInt, pulses = GetWaveData(configFileName , getWaves=True , loud=False)
 
-  Waves = datloader.LoadWaves( nwaves_ )
+  total      = []
+  ratio      = []
+  goodPulses = []
+  tail     = tailInt[0]
+  oldtotal = totalInt[0]
 
-
-  if loud == True:
-    plt.ion()
-    for i in range(0 , len(Waves) , int(nwaves_ / 100) ):
-      wave = Waveform(Waves[i]['Samples'] , polarity, 0 , 3 , ch=Waves[i]["Channel"] , time=Waves[i]["TimeTag"])
-      wave.BaselineSubtract()
-      wave.isDouble(True)
-      plt.cla()
-
-  j = 0
-  pulses = []
-  for wave in Waves:
-    wave = Waveform(wave['Samples'] , polarity, 0 , 3 , ch=wave["Channel"] , time=wave["TimeTag"])
-    wave.BaselineSubtract()
-    tail       = wave.GetIntegralFromPeak(tailIntegralStart  , integralEnd) * VperLSB * ns_per_sample
-    wave.total = wave.GetIntegralFromPeak(totalIntegralStart , integralEnd) * VperLSB * ns_per_sample
-    wave.ratio = tail / (wave.total +0.000001)
-    if wave.ratio >= 0 and wave.ratio < 1 and wave.total >=0 and wave.total < 30:# and wave.isDouble(False) == False:
-      total.append(wave.total)
-      ratio.append(wave.ratio)
-      pulses.append(wave)
-      if loud == True:
-        if np.mod(j,55) == 0:
-          plt.cla()
-          wave.isDouble(True)
-          plt.plot(range(0,Num_Samples) , pulses[-1].blsSamples)
-          plt.draw()
-          plt.pause(0.05)
-
+  print(len(tail))
   print(len(pulses))
 
-  if loud == True:
-    plt.ioff()
-    plt.close()
+  for pulse in pulses:
+    tot  =  pulse.GetIntegralFromPeak(totalIntegralStart , integralEnd)*VperLSB*ns_per_sample
+    tail =  pulse.GetIntegralFromPeak(tailIntegralStart  , integralEnd)*VperLSB*ns_per_sample
+    if tail > 0  and tot > 0:
+      pulse.total = tot
+      pulse.ratio = tail / (0.000001 + tot)
+      goodPulses.append(pulse)
+      ratio.append(pulse.ratio )
+      total.append(tot)
 
   again = True
   avPulses = []
   regions  = []
+
+  print("Found " + str(len(pulses)) + " good pulses!"  )
+
+  # look at a region and get it's info
   while again == True:
     xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
     xmin , xmax = min(xlim) , max(xlim)
     ymin , ymax = min(ylim) , max(ylim)
 
-    xlim = [xmin , xmax]
-    ylim = [ymin , ymax]
-    print("Selected area: Total: [" + str(xmin) + " , " + str(xmax) + "] V ns" + ", Ratio: [" + str(ymin) + " , " + str(ymax) + "]" )
-    region_pulses = getPulsesFromBox(pulses , ylim , xlim )
-    region_name = str(input("What would you like to call this region? "))
+    totLim = [xmin , xmax]
+    ratioLim = [ymin , ymax]
+    print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] V ns"
+                     + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]"
+         )
+
+    region_pulses = getPulsesFromBox( goodPulses , ratioLim , totLim )
+    region_name = tryStrInput("What would you like to call this region? ")
     regions.append(region_name)
 
-    writem      = booleanize(input("would you like to write all the pulses in "  + region_name+ " to " + region_name + "_pulses.out? [y/n] "))
-    timing      = booleanize(input("would you like to write timing data and channel in "  + region_name+ " to " + region_name + "_timing.out? [y/n] "))
-    getTemplate = booleanize(input("would you like to generate a template pulse for the region? [y/n] "))
-    if writem == True:
-      writePulses(region_pulses , region_name)
-    if timing == True:
-      writeTiming(region_pulses , region_name)
-    if getTemplate == True:
-      avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] ) * 2 /( 2**( number_of_bits) - 1) )
-      avPulses.append(avpulse)
-      out = region_name + "template.out"
-      writePulse(avpulse , out , 1 , xlim , ylim)
+   # writem      = booleanize(raw_input("would you like to write all the pulses in "
+  #                           + region_name+ " to " + region_name + "_pulses.out? [y/n] ")
+ #                           )
 
-    again = booleanize(input("Would you like to select another region? [y/n]"))
+   # timing      = booleanize(raw_input("would you like to write timing data and channel in "
+#                             + region_name+ " to " + region_name + "_timing.out? [y/n] ")
+    #                        )
+
+    getTemplate   = tryBoolInput("would you like to generate a template pulse for the region? [y/n] ")
+
+    getDoubleFrac = tryBoolInput("would you like to calculate the double pulse fraction for the region? [y/n] ")
+    if getDoubleFrac == True:
+      frac = findDoubleFrac(region_pulses)
+      print("Double fraction for " + region_name + ": " + str(frac) )
+      shaping      = tryBoolInput("would you like to write pulse shape data in "
+                            + region_name+ " to " + outPath + region_name + "_std.out and " + region_name + "_kurt.out? [y/n]" )
+
+      shapfig      = tryBoolInput("would you like to save pulse shape figs in "
+                             + region_name+ " to " + outPath + region_name + "_std.png and " + outPath + region_name + "_kurt.png? [y/n]" )
+
+      if shaping == True:
+        regionstd , regionkurt = getPulseWidth(region_pulses)
+        writeShaping(regionstd , regionkurt , region_name)
+
+      if shapfig == True:
+        regionstd , regionkurt = getPulseWidth(region_pulses)
+        plotPulseWidths(regionstd , regionkurt , region_name)
+
+    #if writem == True:
+    #  writePulses(region_pulses , region_name)
+
+    #if timing == True:
+    #  writeTiming(region_pulses , region_name)
+
+    if getTemplate == True:
+      avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] )
+                          * VperLSB * ns_per_sample
+                        )
+
+      avPulses.append(avpulse)
+      out = outPath + region_name + "template.out"
+      writePulse(avpulse , out , 1 , totLim , ratioLim)
+
+    again = tryBoolInput("Would you like to select another region? [y/n]")
     print("\r\n")
 
   if regions != [] and avPulses != []:
     print("\r\n Comparing pulse templates in each region")
     compPulses( avPulses , regions , ns_per_sample )
-
-
