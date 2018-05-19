@@ -336,6 +336,7 @@ if __name__ == '__main__':
   again = True
   avPulses = []
   regions  = []
+  temp_regions = []
 
   print("Found " + str(len(pulses)) + " good pulses!"  )
 
@@ -346,6 +347,7 @@ if __name__ == '__main__':
     ymin , ymax = min(ylim) , max(ylim)
 
     totLim = [xmin , xmax]
+    totLim = [0 , 0.25]
     ratioLim = [ymin , ymax]
     print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] V ns"
                      + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]"
@@ -370,6 +372,7 @@ if __name__ == '__main__':
       avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] )
                           * VperLSB * ns_per_sample )
       avPulses.append(avpulse)
+      temp_regions.append(region_name)
       out = outPath + region_name + "template.out"
       writePulse(avpulse , out , 1 , totLim , ratioLim)
 
@@ -397,4 +400,4 @@ if __name__ == '__main__':
 
   if regions != [] and avPulses != []:
     print("\r\n Comparing pulse templates in each region")
-    compPulses( avPulses , regions , ns_per_sample )
+    compPulses( avPulses , temp_regions , ns_per_sample )

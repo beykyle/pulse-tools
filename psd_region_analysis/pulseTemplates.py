@@ -42,7 +42,8 @@ def readAndAveragePulses(*args, **kwargs):
 
 def writePulse(pulse, fname , conversionFactor , xlim , ylim):
   with open(fname , "w" ) as out:
-    out.write("Template from selected region: Total: [" + str(xlim[0]) + " , " + str(xlim[1]) + "] V ns" + ", Ratio: [" + str(ylim[0]) + " , " + str(ylim[1]) + "]" )
+    out.write("Template from selected region: Total: [" + str(xlim[0]) + " , " + str(xlim[1]) + "] V ns"
+        + ", Ratio: [" + str(ylim[0]) + " , " + str(ylim[1]) + "]" )
     for v in pulse:
       out.write('{:1.8E}'.format(v * conversionFactor) + "\r\n")
 
