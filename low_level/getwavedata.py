@@ -5,9 +5,10 @@ configuration file to return basic waveform information.
 Created on Wed Dec  7 06:19:10 2016
 
 @author: Marc Ruch
-- Edited by Kyle Beyer
+Edited by Kyle Beyer
 """
 
+from __future__ import print_function
 import numpy as np
 import sys
 import platform
@@ -16,7 +17,6 @@ import configparser
 
 from matplotlib import pyplot as plt
 from time import sleep
-
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
     """
@@ -33,7 +33,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = '\r')
+    print('\r %s |%s| %s%% %s'%(prefix, bar, percent, suffix), end = "\r")
     # Print New Line on Complete
     if iteration == total:
         print()
@@ -71,7 +71,8 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
     # Directories
     data_directory = config['Directories']['data_directory']
     data_file_name = config['Directories']['data_file_name']
-    if 'data_file_name' in config['Directories']:
+    goodInd = False
+    if 'goodind_file_name' in config['Directories']:
       goodInd = True
       goodind_file_name = config['Directories']['goodind_file_name']
     pywaves_directory = config['Directories']['pywaves_directory']
@@ -189,13 +190,12 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
     pulses = []
     # Queue up waves
     for f in range(startFolder, startFolder+nFolders):
-        print('Folder {}:'.format(f))
+        print('\n Folder {}:'.format(f))
         fullDFileName = data_directory + directory_separator + str(f) + directory_separator + data_file_name
         print(fullDFileName)
 
         datloader     = DataLoader(fullDFileName,dataFormat,nSamples)
         nWavesInFile  = datloader.GetNumberOfWavesInFile()
-
 
         if (nWavesInFile < nWaves):
             print('Warning: requested more waves than exists in file!')
@@ -216,17 +216,17 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
               goodIndices.append(int(line) - 1)
           goodIndices = np.array(goodIndices)
         else:
-          goodIndices = np.arrange(0,nWavesInFile - 1)
+          goodIndices = np.arange(0,nWavesInFile - 1)
 
         waveNum = 0
-        printProgressBar(0, loadsInFile , prefix = 'Loading waves from :' + fullDFileName , suffix = 'Complete')
+        printProgressBar(0, loadsInFile , prefix = 'Progress: ' , suffix = 'Complete')
         for load in range(loadsInFile):
             if(load == loadsInFile-1):
                 wavesThisLoad = lastLoad
             else:
                 wavesThisLoad = nWavesPerLoad
             waves = datloader.LoadWaves(wavesThisLoad)
-            for w in range(wavesThisLoad):
+            for w in range(0 , wavesThisLoad - 1):
                 if waveNum == goodIndices[0]:
                   goodIndices = goodIndices[1:]
                   ch = waves[w]['Channel']
@@ -253,13 +253,15 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
                   if getWaves == True:
                     pulses.append(waveform)
 
-                waveNum += 1
-          # update progress bar following new load
-          printProgressBar(loads, loadsInFile , prefix = 'Loading waves from :' + fullDFileName , suffix = 'Complete')
+                waveNum += 1 # increment the wave counter in the current load
+              # end iteration over waves in load - end load
+
+            # update progress bar following new load
+            printProgressBar(load + 1, loadsInFile , prefix = 'Progress: ' , suffix = 'Complete')
 
     endTime = time.time()
     runTime = endTime - startTime
-    print("GetWaveData took {} s".format(runTime))
+    print("\nGetWaveData took {} s".format(runTime))
     if getWaves == False:
       return chCount, ttt , dataStorage
     else:
