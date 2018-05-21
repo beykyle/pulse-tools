@@ -15,7 +15,28 @@ import time
 import configparser
 
 from matplotlib import pyplot as plt
+from time import sleep
 
+
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = '\r')
+    # Print New Line on Complete
+    if iteration == total:
+        print()
 
 def getWaveTail(waveform):
   return(waveform.GetIntegralFromPeak(tailIntegralStart,integralEnd)*VperLSB*ns_per_sample)
@@ -198,6 +219,7 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
           goodIndices = np.arrange(0,nWavesInFile - 1)
 
         waveNum = 0
+        printProgressBar(0, loadsInFile , prefix = 'Loading waves from :' + fullDFileName , suffix = 'Complete')
         for load in range(loadsInFile):
             if(load == loadsInFile-1):
                 wavesThisLoad = lastLoad
@@ -232,7 +254,8 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
                     pulses.append(waveform)
 
                 waveNum += 1
-
+          # update progress bar following new load
+          printProgressBar(loads, loadsInFile , prefix = 'Loading waves from :' + fullDFileName , suffix = 'Complete')
 
     endTime = time.time()
     runTime = endTime - startTime
