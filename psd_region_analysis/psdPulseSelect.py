@@ -323,6 +323,13 @@ if __name__ == '__main__':
   goodPulses = []
   tail       = []
 
+  conversion = 1
+  units_x = 'Total Integral [V ns]'
+  if  'integral_LO_conversion' in config['Pulse Processing']:
+    conversion = float(config['Pulse Processing']['integral_LO_conversion'])
+    units_x = 'Light Output [MeVee]'
+
+
   for pulse in pulses:
     tot  =  pulse.GetIntegralFromPeak(totalIntegralStart , integralEnd)*VperLSB*ns_per_sample
     tail =  pulse.GetIntegralFromPeak(tailIntegralStart  , integralEnd)*VperLSB*ns_per_sample
@@ -342,14 +349,14 @@ if __name__ == '__main__':
 
   # look at a region and get it's info
   while again == True:
-    xlim , ylim = scatterDensity(total , ratio , ["Total Integral [V ns]" , "Tail/Total"] )
+    xlim , ylim = scatterDensity(total , ratio , [ units_x ,  "Tail/Total"] )
     xmin , xmax = min(xlim) , max(xlim)
     ymin , ymax = min(ylim) , max(ylim)
 
     totLim = [xmin , xmax]
     totLim = [0 , 0.25]
     ratioLim = [ymin , ymax]
-    print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] V ns"
+    print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] " + units_x
                      + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]"
          )
 

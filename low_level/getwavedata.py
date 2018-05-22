@@ -226,7 +226,7 @@ def GetWaveData(configFileName, getZeroCrossingIntegral=True , getWaves=True, lo
             else:
                 wavesThisLoad = nWavesPerLoad
             waves = datloader.LoadWaves(wavesThisLoad)
-            for w in range(0 , wavesThisLoad - 1):
+            for w in range(0 , wavesThisLoad ):
                 if waveNum == goodIndices[0]:
                   goodIndices = goodIndices[1:]
                   ch = waves[w]['Channel']
