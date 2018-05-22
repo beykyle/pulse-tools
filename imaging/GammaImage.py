@@ -7,6 +7,8 @@ resulting from a n MCNPX-PoliMi simulation of a mixed Compton system
    event types are possible
 
 """
+
+from matplotlib import pyplot as plt
 import numpy as np
 import sys
 
