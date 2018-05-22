@@ -69,12 +69,15 @@ class Annotate(object):
     self.y0 = event.ydata
 
   def on_release(self, event):
-    self.x1 = event.xdata
-    self.y1 = event.ydata
-    self.rect.set_width(self.x1 - self.x0)
-    self.rect.set_height(self.y1 - self.y0)
-    self.rect.set_xy((self.x0, self.y0))
-    self.ax.figure.canvas.draw()
+    try:
+      self.x1 = event.xdata
+      self.y1 = event.ydata
+      self.rect.set_width(self.x1 - self.x0)
+      self.rect.set_height(self.y1 - self.y0)
+      self.rect.set_xy((self.x0, self.y0))
+      self.ax.figure.canvas.draw()
+    except TypeError:
+      print("Can't select outside the plot! Try again!")
 
 def CFD(Blnd_Wave, F):
 	CFD_Val = F*max(Blnd_Wave)
