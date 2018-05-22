@@ -287,7 +287,7 @@ def tryBoolInput(string):
     try:
       var = booleanize(raw_input(string))
       gotIt = True
-    except ValueError:
+    except TypeError:
       print("Input could not be interpreted! Try again.")
 
   return(var)
@@ -331,14 +331,14 @@ if __name__ == '__main__':
 
 
   for pulse in pulses:
-    tot  =  pulse.GetIntegralFromPeak(totalIntegralStart , integralEnd)*VperLSB*ns_per_sample
-    tail =  pulse.GetIntegralFromPeak(tailIntegralStart  , integralEnd)*VperLSB*ns_per_sample
+    tot  =  pulse.GetIntegralFromPeak(totalIntegralStart , integralEnd)*VperLSB*ns_per_sample * conversion
+    tail =  pulse.GetIntegralFromPeak(tailIntegralStart  , integralEnd)*VperLSB*ns_per_sample * conversion
     if tail > 0  and tot > 0:
       pulse.total = tot
       pulse.ratio = tail / (0.000001 + tot)
       goodPulses.append(pulse)
       ratio.append(pulse.ratio )
-      total.append(tot)
+      total.append(tot )
 
   again = True
   avPulses = []
@@ -354,17 +354,17 @@ if __name__ == '__main__':
     ymin , ymax = min(ylim) , max(ylim)
 
     totLim = [xmin , xmax]
-    totLim = [0 , 0.25]
+    totLim = [9.5 , 10]
     ratioLim = [ymin , ymax]
     print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] " + units_x
-                     + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]"
-         )
+                     + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]" )
 
     region_pulses = getPulsesFromBox( goodPulses , ratioLim , totLim )
     region_name = tryStrInput("What would you like to call this region? ")
     regions.append(region_name)
 
-    writem      = tryBoolInput("would you like to write all the pulses in " + region_name+ " to " + region_name + "_pulses.out? [y/n] ")
+    writem      = tryBoolInput("would you like to write all the pulses in " + region_name +
+                               " to " + region_name + "_pulses.out? [y/n] ")
     if writem == True:
       writePulses(region_pulses , region_name)
 
