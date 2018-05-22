@@ -18,14 +18,14 @@ __status__ = "Development"
 
 class Detector:
   def __init__(self ,  ZDEV , TDEV , a , b , c , kmap , E2Cutoff , x , y , dimensions):
-    Zdev = ZDEV
-    Tdev = TDEV
-    a = a
-    b = b
-    c = c
-    k = kmap
-    E2Cutoff = E2Cutoff
-    dimensions = dimensions # rectangular base of detector [xwidth , ywidth ]
+    self.Zdev = ZDEV
+    self.Tdev = TDEV
+    self.a = a
+    self.b = b
+    self.c = c
+    self.k = kmap
+    self.E2Cutoff = E2Cutoff
+    self.dimensions = dimensions # rectangular base of detector [xwidth , ywidth ]
 
 def getBestKfromCell( cell1 , cell2 ):
   global detectors
@@ -203,9 +203,29 @@ def getImageableEventsFromCollisonFile( fi , E2Cutoff , detectors ):
 
   return( imageEfficiency , imageableEvents )
 
-def createImage( imageableEvents , resolution=[1000,1000] ):
-  # TODO return a matrix of the image
+def plotZ(theta, Phi, Z, counter):
+    plt.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
+    plt.xlabel(r"Azimuthal Angle [$\Theta$]")
+    plt.ylabel(r"Altitude Angle [$\Phi$]")
+    plt.title("Cones: "+str(counter))
+    plt.xlim(-180,180)
+    plt.ylim(-90,90)
+    plt.colorbar()
+    plt.savefig(sys.argv[1]+str(counter)+".png", ext="png", close=True, verbose=False)
+    plt.close()
+
+def writeOut(Z , fname):
+    np.savetxt(fname , Z)
+
+def getConeFromEvent(event , resolution):
   pass
+
+def createImage( imageableEvents , resolution=[1000,1000] ):
+  Z = np.zeros(resolution[0] , resolution[1])
+  for event in imageableEvents:
+    Z += getConeFromEvent(event , resolution)
+
+  return(Z)
 
 def fitGaussianToImage( imageMatrix ):
   pass
@@ -213,21 +233,30 @@ def fitGaussianToImage( imageMatrix ):
 def getImageEntropy( imageMatrix ):
   pass
 
-
 if __name__ == '__main__':
   colFile = sys.argv[1]
+
+  Binning = 1000
+  # Defining Coordinates
+  Azimuth = np.linspace(-180,180,Binning)
+  Altitude = np.linspace(-90,90,Binning)
+  Theta,Phi = np.meshgrid(Azimuth,Altitude)
+
   detectorDataFi = sys.argv[2]
 
   detectors = setDetectors( detectorDataFi )
   maxNumEvents = sys.argv[3]
 
   imageEfficiency , imageableEvents  =  getImageableEventsFromCollisonFile( colFile , E2Cutoff , detectors )
+  Z = np.zeros(resolution[0] , resolution[1])
+  Z += getConeFromEvent(imageableEvents[0] , [Binning , Binning])
+  plotZ(Z , 1)
 
-  if maxNumEvents > len(imageableEvents):
-    maxNumEvents = len(imageableEvents)
+#  if maxNumEvents > len(imageableEvents):
+#    maxNumEvents = len(imageableEvents)
 
-  imageMatrix = createImage(imageableEvents[0:maxNumEvents] , resolution=[200 , 200] )
-  center , covarianceDeterminant , fwhmTheta , fwhmPhi = fitGaussianToImage( imageMatrix )
-  entropy = getImageEntropy( imageMatrix )
+#  imageMatrix = createImage(imageableEvents[0:maxNumEvents] , resolution=[200 , 200] )
+#  center , covarianceDeterminant , fwhmTheta , fwhmPhi = fitGaussianToImage( imageMatrix )
+#  entropy = getImageEntropy( imageMatrix )
 
 
