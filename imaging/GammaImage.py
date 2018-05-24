@@ -9,7 +9,7 @@ resulting from a n MCNPX-PoliMi simulation of a mixed Compton system
 """
 
 from matplotlib  import pyplot as plt
-from collections import namedtuple
+
 import numpy as np
 import sys
 import configparser
@@ -26,7 +26,36 @@ __status__ = "Development"
 # --------------------------------------------------------------------------------------------------------------------- #
 
 class Detector:
-  def __init__(self  , xdev , ydev , zdev , tdev , a , b , c , k=[] , kdev = [] , E2_cutoff=0 ):
+  """
+  Each  instance of the Detector class holds the characteristics of a detector defined in the detector
+  setup file, corresponding to an MCNP cell in the collision file. If the position of an event within
+  the detector is taken just as the center of the detector (or the posiiton along an axis is taken as
+  the center of the detector along that axis), the center of the detector x,y,z (or center along that axis
+  or axes, e.g. just x or both y and z) will be set in the set detector function. For positions set (e.g. x),
+  the uncertainty (e.g. xdev) corresponds to the size of the detector along that axis, as that is the uncertainty.
+  Otherwise, if the position of an event is reconstructed somehow within the detector, then the detector object
+  does not require a position argument along that axis, and the position uncertainty along that axis is the
+  characteristic uncertainty of the reconstruction method, as set in the detector file.
+  """
+  def __init__(self  , xdev , ydev , zdev , tdev , a , b , c , k={} , kdev={} , E2_cutoff=0 ):
+    """
+    Constructor
+    @params:
+        xdev                 - Required  : the uncertainty in the x position of an event in the detector
+        ydev                 - Required  : the uncertainty in the y position of an event in the detector
+        zdev                 - Required  : the uncertainty in the z position of an event in the detector
+        tdev                 - Required  : the time resolution of the detector in seconds
+        a                    - Required  : energy fwhm [MeV] = a + b * sqrt( E_i + c * E_i^2 ), where E_i is the
+                                           incident particle energy
+        b                    - Required  : see a
+        c                    - Required  : see a
+        k                    - Optional  : kinematic approximation for double scatter events: k = (E_i -E_1)/E_2
+                                           Dictionary mapping from cell of intial scatter to optimal k
+        kdev                 - Optional  : the uncertainty in the kineamtic approximation
+                                           Dictionary mapping from cell of intial scatter to uncertainty
+        E2_Cutoff            - Optional  : The cutoff deposited energy for second scatters in the detector,
+                                            below which, events are ignored.
+    """
     self.xdev = xdev
     self.ydev = ydev
     self.zdev = zdev
@@ -39,21 +68,52 @@ class Detector:
     self.E2_cutoff = E2_cutoff
 
   def sampleX(self , x):
+    """
+    Sample location of event in detector - only used for reconstruction
+    @params:
+        x                 - Required  : the real position within the detector from the collison file
+    """
     return( np.random.normal(x , self.xdev))
 
   def sampleY(self , y):
+    """
+    Sample location of event in detector - only used for reconstruction
+    @params:
+        y                 - Required  : the real position within the detector from the collison file
+    """
     return( np.random.normal(y , self.ydev))
 
   def sampleZ(self , z):
+    """
+    Sample location of event in detector - only used for reconstruction
+    @params:
+        z                 - Required  : the real position within the detector from the collison file
+    """
     return( np.random.normal(z , self.zdev))
 
   def getEnergyFWHM(self, Ei ):
+    """
+    energy fwhm [MeV] = a + b * sqrt( E_i + c * E_i^2 ), where E_i is the incident particle energy
+    @params:
+        Ei                 - Required  : incident particle energy
+    """
     return( self.a + self.b * np.sqrt( Ei + self.c * Ei**2 ) )
 
   def sampleEnergy(self, Ei , Edep ):
-    return( np.random.normal( self.Edep , 0.2355 * getEnergyFWHM(Ei) ) )
+    """
+    Sample deposited energy
+    @params:
+        Ei                 - Required  : incident particle energy
+        Edep               - Required  : real deposited energy from collision file
+    """
+    return( np.random.normal( Edep , 0.2355 * self.getEnergyFWHM(Ei) ) )
 
   def sampleTime(self, t ):
+    """
+    Sample event time
+    @params:
+        t                 - Required  : real time from collision file
+    """
     return( np.random.normal( t , self.tdev ))
 
 
@@ -67,19 +127,23 @@ class eventData:
   angle, as well as the uncertainty in those values. This class acts a simple data structure that holds that information.
 
   """
-  def __init__(self , vec , vecUncertainty , angle , angleUncertainty):
+  def __init__(self , theta , phi , deltaTheta , deltaPhi , angle , angleUncertainty):
     """
     Constructor
     @params:
-        vec                 - Required  : unit vector between events [x,y,z]
-        vecUncertainty      - Required  : uncertainty in vec [delta_x , delta_y , delta_z]
-        angle               - Required  : backprojected cone angle
-        angleUncertainty    - Required  : uncertainty in angle
+        theta               - Required  : polar angle of projected unit vector
+        phi                 - Required  : azimuthal angle of projected unit vector
+        deltaTheta          - Required  : uncertainty in theta
+        deltaPhi            - Required  : uncertainty in phi
+        angle               - Required  : backprojected cone angle cosine
+        angleUncertainty    - Required  : uncertainty in angle cosine
     """
-    self.vec = vec
-    self.vecUncertainty = vecUncertainty
-    self.angle = angle
-    self.angleUncertainty = angleUncertainty
+    self.theta      = theta * 90 / (np.pi) - 45
+    self.phi        = phi   * 90 / (np.pi)
+    self.deltaTheta = deltaTheta * 90 / ( np.pi)
+    self.deltaPhi   = deltaPhi   * 90 / (np.pi)
+    self.angle      = np.arccos(angle) * 90 / ( np.pi)
+    self.deltaAngle = np.sqrt( angleUncertainty**2 / ( 1 - angle**2)  ) * 90 / ( np.pi)
 
 def getPositionFromDetector( detector , x , y , z):
   """
@@ -125,18 +189,32 @@ def getPositionFromDetector( detector , x , y , z):
   unc = [ detector.xdev , detector.ydev , detector.zdev]
   return(pos , unc)
 
-def getVector( pos1 , pos2 , un1 , un2):
+def unitProjection( pos1 , pos2 , un1=0 , un2=0 , centerVec=[0,1,0] , error=False):
   """
-  Returns normal vector between events in the detector array, as well as the uncertainty
-  Uncertainty is propagated through the equation for a normalized displacement between to
-  points in R^3
+  Given two positions in R^3 and their associated uncertainties, unitProjection
+  projects the unit vector along the axis between their uncertainties onto the unit
+  sphere {theta , phi}, and analytically propagates uncertainty through the
+  vector calculations, normalization, and projection to get uncertainties in
+  theta and phi.
   @params:
-      pos1    - Required  : position of 1st interaction
-      pos2    - Required  : position of 2nd interaction
-      un1     - Required  : uncertainty in 1st position
-      un2     - Required  : uncertainty in 2nd position
+      pos1    - Required  : position of 1st interaction [x,y,z]
+      pos2    - Required  : position of 2nd interaction [x,y,z]
+      un1     - Required  : uncertainty in 1st position [delta_x , delta_y , delta_z]
+      un2     - Required  : uncertainty in 2nd position [delta_x , delta_y , delta_z]
   """
-  xdev =  np.sqrt(  un1[0]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+  # find unit vector
+  vec =  np.array( [ pos1[0] - pos2[0] , pos1[1] - pos2[1] , pos1[2] - pos2[2] ] )
+  #vec =  vec - sourceLocation
+  [x,y,z] = vec / np.linalg.norm(vec)
+
+
+  # project onto unit sphere
+  theta = np.arccos(x)
+  phi   = np.arcsin(z)
+
+  if error == True:
+    # propagate uncertainty in pos1, pos2 to find uncertainty in x
+    varx =        ( un1[0]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
                                   ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
                                     (pos2[2] - pos1[2])**2 )**3  ) +
                     un2[0]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
@@ -155,12 +233,37 @@ def getVector( pos1 , pos2 , un1 , un2):
                                   ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
                                     (pos2[2] - pos1[2])**2 )**3  )
                     )
-  ydev = 0
-  zdev = 0
-  uncertainty=[ xdev , ydev , zdev]
-  vec =  np.array( [ pos2[0] - pos1[0] , pos2[1] - pos1[1] , pos2[2] - pos1[2] ] )
-  return(vec / np.linalg.norm(vec) , uncertainty)
 
+    # propagate uncertainty in pos1, pos2 to find uncertainty in z
+    varz =        ( un1[0]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  ) +
+                    un2[0]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  ) +
+                    un1[1]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  ) +
+                    un2[1]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  )+
+                    un1[2]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  ) +
+                    un2[2]**2 * ( ( (pos2[1] - pos1[1])**2 + (pos2[2] - pos1[2])**2 )**2 /
+                                  ( (pos2[0] - pos1[0])**2 + (pos2[1] - pos1[1])**2 +
+                                    (pos2[2] - pos1[2])**2 )**3  )
+                   )
+
+    # propagate uncertainty in x into theta
+    devTheta = varx / np.fabs((1 - x**2))
+    # propagate uncertainty in z into phi
+    devPhi   = varz / np.fabs((1 - z**2))
+
+    return(theta , phi , devTheta , devPhi)
+
+  else:
+    return(theta, phi)
 
 def getDoubleScatterConeAngleCos(  E1 , E2 , devE1 , devE2 , k=2 , kdev=0):
   """
@@ -182,7 +285,7 @@ def getDoubleScatterConeAngleCos(  E1 , E2 , devE1 , devE2 , k=2 , kdev=0):
   return angle , uncertainty
 
 def getFullDepConeAngleCos( E1 , E2 , devE1 , devE2):
-  angle =  1 - (0.511 / E2 - 0.511 / (E1 + E2)  )
+  angle =  1 - (0.511 / E2 - 0.511 / (E1 + E2) )
   # propagate uncertainty in energy
   uncertainty = np.sqrt( devE1**2 * 0.261121 / (E1 + E2)**4 +
                          devE2**2 * ( 0.511 / (E2**2) - 0.511 / (E1 + E2)**2 )**2
@@ -195,7 +298,7 @@ def getFullDepConeAngleCos( E1 , E2 , devE1 , devE2):
 #  Collision file parsing function
 # --------------------------------------------------------------------------------------------------------------------- #
 
-def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , loud=False):
+def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , loud=False, centerVec=[0,1,0] ):
   """
   Iterates through a collision file from MXNPX-PoliMi in linear time
   Selects subsequent gamma events with the same particle ID that
@@ -238,7 +341,7 @@ def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , lo
     # get a block of two lines
     line     = [x for x in line.split(" ")       if x != '']
     nextline = [x for x in lines[i+1].split(" ") if x != '']
-    # if it is a photon that compton scatters in a cell, and the next line is the same photon=
+    # if it is a photon that compton scatters in a cell, and the next line is the same photon
     # and it scatters into a different cell, where it is either scattered again or captured
     if (  (line[2] == "2") and (line[3] == "1") and (line[0] == nextline[0]) and (int(nextline[5]) != int(line[5]))
                            and (nextline[3] == "1" or nextline[3] == "3" or nextline[3] == "4" )  ):
@@ -252,28 +355,34 @@ def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , lo
                                             float(line[9]) , float(line[10]) )
       pos2 , unc2 = getPositionFromDetector( tmpDet2            , float(nextline[8] ) ,
                                              float(nextline[9]) , float(nextline[10]) )
-      vec , vecUncertainty = getVector( pos1 , pos2 , unc1 , unc2)
+
+      # get projecion of unit vector bt scattering events onto unti sphere {theta,phi}
+      # as well as analytically propagated uncertainties
+      theta, phi , deltaTheta , deltaPhi  = unitProjection( pos1 , pos2 , un1=unc1 , un2=unc2 ,
+                                                            centerVec , error=True
+                                                          )
 
       # check if it is a scatter -> scatter or scatter -> capture event
-      if nextline[3] == "1":
+      # and if so, if the second energy deposited is above the cutoff for its detector
+      if nextline[3] == "1" and ( float(nextline[6]) >= tmpDet2.E2_cutoff ):
         # double scatter event
-        cos , unc = getDoubleScatterConeAngleCos( float( line[6] )     ,
-                                                    float( nextline[6] ) ,
+        cos , unc = getDoubleScatterConeAngleCos(   tmpDet1.sampleEnergy( float( line[-1])     , float( line[6] ) )            ,
+                                                    tmpDet2.sampleEnergy( float( nextline[-1]) , float( nextline[6] ) )    ,
                                                     0.2355 * tmpDet1.getEnergyFWHM( float(line[-1]) )     ,
                                                     0.2355 * tmpDet2.getEnergyFWHM( float(nextline[-1]) ) ,
                                                     k=tmpDet1.k[    int(nextline[5]) ] ,
                                                     kdev=tmpDet1.kdev[ int(nextline[5]) ]
-                                                  )
+                                                )
 
       else:
-        cos , unc = getFullDepConeAngleCos( float( line[6] )     ,
-                                              float( nextline[6] ) ,
+        cos , unc = getFullDepConeAngleCos(   tmpDet1.sampleEnergy( float( line[-1])     , float( line[6] ) )            ,
+                                              tmpDet2.sampleEnergy( float( nextline[-1]) , float( nextline[6] ) )    ,
                                               0.2355 * tmpDet1.getEnergyFWHM( float(line[-1]) )     ,
                                               0.2355 * tmpDet2.getEnergyFWHM( float(nextline[-1]) ) ,
-                                            )
-
+                                          )
       #append to imageData
-      imageData.append( eventData( vec , vecUncertainty , cos  , unc ) )
+      if (cos >= -1 and cos <= 1 ):
+        imageData.append( eventData(theta , phi , deltaTheta , deltaPhi ,  cos  , unc ) )
 
     # update progress bar following new load
     if loud == True:
@@ -281,62 +390,21 @@ def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , lo
 
   # divide the amount of imageable events (double scatter or scatter -> absorption) by the
   # number of histories used to get image efficiency
-  imageEfficiency = len(imageData) / float(nextline[0])
-  efficiencyUncertainty = np.sqrt(  len(imageData) / float( nextline[0] )  -
-                                    (1 / float(nextline[0])**2 ) * len(imageData)**2
-                                 )
+  numImageableEvents = len(imageData)
+  numSourceHistories = int(nextline[0])
+  # Wilson score interval for binomial estimation - see wikipedia
+  imageEfficiency = numImageableEvents / numSourceHistories
+  efficiencyUncertainty =  np.sqrt(imageEfficiency * ( 1 - imageEfficiency) / numSourceHistories)
 
   if loud == True:
-    print("\n\n Found " + str(len(imageData)) + " imageable events, out of " + nextline[0] +
-          " source particle histories checked, for an image efficiency of " + str(imageEfficiency) +
-          " +/- " +  str(efficiencyUncertainty) + "\n\n"
+    print( "\n")
+    print("Found " + str(numImageableEvents) + " imageable events, out of " + nextline[0] +
+        " source particle histories checked, for an image efficiency of " + '{:1.3E}'.format(imageEfficiency) +
+          " +/- " +  '{:1.3E}'.format(efficiencyUncertainty) + "\n\n"
          )
 
   return( imageData , imageEfficiency , efficiencyUncertainty )
 
-
-# --------------------------------------------------------------------------------------------------------------------- #
-#   Image plotting and writing functions
-# --------------------------------------------------------------------------------------------------------------------- #
-
-def plotZ(theta, Phi, Z, counter):
-    plt.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
-    plt.xlabel(r"Azimuthal Angle [$\Theta$]")
-    plt.ylabel(r"Altitude Angle [$\Phi$]")
-    plt.title("Cones: "+str(counter))
-    plt.xlim(-180,180)
-    plt.ylim(-90,90)
-    plt.colorbar()
-    plt.savefig(sys.argv[1]+str(counter)+".png", ext="png", close=True, verbose=False)
-    plt.close()
-
-def writeOut(Z , fname):
-    np.savetxt(fname , Z)
-
-# --------------------------------------------------------------------------------------------------------------------- #
-#  Image creation functions
-# --------------------------------------------------------------------------------------------------------------------- #
-
-def addConeToImage( eventData , Z):
-
-  return(Z)
-
-def createImage( imageableEvents , resolution=[1000,1000] ):
-  Z = np.zeros(resolution[0] , resolution[1])
-  for event in imageableEvents:
-    Z  = addConeToImage(event , resolution)
-
-  return(Z)
-
-# --------------------------------------------------------------------------------------------------------------------- #
-#  Image evaluation functions
-# --------------------------------------------------------------------------------------------------------------------- #
-
-def fitGaussianToImage( imageMatrix ):
-  pass
-
-def getImageEntropy( imageMatrix ):
-  pass
 
 # --------------------------------------------------------------------------------------------------------------------- #
 #  Detector setup file reader
@@ -474,6 +542,129 @@ def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_lengt
         sys.stdout.write('\n')
     sys.stdout.flush()
 
+def booleanize(value):
+    """Return value as a boolean."""
+    true_values = ("yes", "true", "1" , "y" , "Yes" , "Y")
+    false_values = ("no", "false", "0" , "n" , "N" , "No")
+    if isinstance(value, bool):
+        return value
+    if value.lower() in true_values:
+        return True
+    elif value.lower() in false_values:
+        return False
+    raise TypeError("Cannot booleanize ambiguous value '%s'" % value)
+
+# --------------------------------------------------------------------------------------------------------------------- #
+#   Image plotting and writing functions
+# --------------------------------------------------------------------------------------------------------------------- #
+
+def plotZ(Theta, Phi, Z, counter , resolution  , sourceLocation=[0,0] , sideHists=False ):
+  f = plt.figure(1 , figsize=(8,4))
+
+  if( sideHists == True):
+    left, width = 0.1, 0.65
+    bottom, height = 0.1, 0.65
+    bottom_h = left_h = left + width + 0.03
+
+    rect_scatter = [left, bottom, width, height]
+    rect_histx = [left, bottom_h , width, 0.2]
+    rect_histy = [left_h, bottom, 0.2, height]
+
+    axHistx = plt.axes(rect_histx)
+    axHisty = plt.axes(rect_histy)
+    axHistx.xaxis.set_visible(False)
+    axHisty.yaxis.set_visible(False)
+
+    axHisty.set_ylim(-90 , 90 )
+    axHistx.set_xlim(-180 , 180 )
+
+    axScatter = plt.axes(rect_scatter)
+    axScatter.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
+    axScatter.set_xlabel(r"Azimuthal Angle [$\Theta$]")
+    axScatter.set_ylabel(r"Altitude Angle [$\Phi$]")
+    axScatter.set_xlim(-180 , 180 )
+    axScatter.set_ylim(-90 , 90 )
+    axScatter.scatter( sourceLocation[0] , sourceLocation[1]  , s=50 , facecolors='none',
+             edgecolors='r' , label='actual source location')
+    axScatter.xaxis.labelpad = -1
+    axScatter.legend()
+    plt.text( 205 , 130 ,  "Cones: "+str(counter)  ,fontsize=16 )
+
+    # integrate Z over each dimension
+    Azimuth = np.linspace(-180  , 180  ,resolution[0])
+    Altitude = np.linspace(-90 , 90 ,resolution[1])
+    thetaDist = np.sum(Z , axis=0)
+    phiDist   = np.sum(Z , axis=1)
+
+    # get max theta , phi
+    thetaMax , phiMax = Azimuth[ np.argmax(thetaDist) ] , Altitude[ np.argmax(phiDist) ]
+
+    # plot integrated theta, phi distributions
+    axHistx.plot( Azimuth   , thetaDist  , linewidth=3 )
+    axHisty.plot( phiDist   , Altitude   , linewidth=3 )
+    axHistx.fill_between( Azimuth   , thetaDist ,  facecolor='b')
+    axHisty.fill_between( phiDist   , Altitude  ,  facecolor='b')
+
+    # plot crosshairs over centers of the distribution
+    axHisty.plot( [0, max(phiDist)] , [ phiMax , phiMax ] , 'r--'   )
+    axHistx.plot( [thetaMax , thetaMax ] , [0, max(thetaDist)]   , 'r--'   )
+    axScatter.plot( [-180 , 180 ] , [phiMax , phiMax] , 'r--')
+    axScatter.plot( [thetaMax , thetaMax] , [-90 , 90] , 'r--')
+
+  else:
+    plt.title("Cones: "+str(counter))
+    plt.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
+    plt.set_xlabel(r"Azimuthal Angle [$\Theta$]")
+    plt.set_ylabel(r"Altitude Angle [$\Phi$]")
+    plt.set_xlim(-180 , 180 )
+    plt.set_ylim(-90 , 90 )
+    plt.scatter( sourceLocation[0] , sourceLocation[1]  , s=50 , facecolors='none',
+             edgecolors='r' , label='actual source location')
+
+    plt.legend()
+
+  plt.show()
+  plt.close()
+
+def writeOut(Z , fname):
+    np.savetxt(fname , Z)
+
+# --------------------------------------------------------------------------------------------------------------------- #
+#  Image creation functions
+# --------------------------------------------------------------------------------------------------------------------- #
+
+def addConeToImage( e , Z, theta , phi):
+  # analytically calculated variance
+  var  = 500000
+  # analytically calculated normalizing factor
+  norm = 1
+  Z += norm * np.exp(  -( e.angle**2- (theta - e.theta)**2 - (phi - e.phi)**2)**2 / var  )
+  return(Z)
+
+def createImage( imageableEvents , res=[1000,1000] , loud=False ):
+  if loud == True:
+    print( "Now constructing image from " + str(len(imageableEvents)) +  " events")
+    print_progress(0, len(imageableEvents), prefix='progress', suffix='', decimals=1, bar_length=100)
+
+  Z = np.zeros(resolution)
+  for i , event in enumerate(imageableEvents):
+    Z  = addConeToImage(event , Z , theta , phi)
+    if loud == True:
+      print_progress(i+1, len(imageableEvents), prefix='progress', suffix='', decimals=1, bar_length=100)
+
+  return(Z)
+
+# --------------------------------------------------------------------------------------------------------------------- #
+#  Image evaluation functions
+# --------------------------------------------------------------------------------------------------------------------- #
+
+def fitGaussianToImage( imageMatrix ):
+  pass
+
+def getImageEntropy( imageMatrix ):
+  pass
+
+
 # --------------------------------------------------------------------------------------------------------------------- #
 #   Main function
 # --------------------------------------------------------------------------------------------------------------------- #
@@ -485,6 +676,9 @@ if __name__ == '__main__':
   config = configparser.ConfigParser()
   config.read( configFile )
 
+  # get loud boolean
+  loudPrint = booleanize(config['General']['loud'])
+
   # get path to collision file
   colFile = config['Directories']['collision_file_path']
 
@@ -495,26 +689,32 @@ if __name__ == '__main__':
   # read pixel resolution
   resolution = [ int(x.strip()) for x in config['General']['resolution'].split(",") ]
 
+  # read gournd truth source location
+  location = [ float(x.strip()) for x in config['General']['source_location'].split(",") ]
+
+  #project source location onto unit sphere
+  stheta , sphi  = unitProjection( location , [0,0,0] , error=False )
+
   # set up discrete ordinate coordinate system
-  Azimuth = np.linspace(-180,180,resolution[0])
-  Altitude = np.linspace(-90,90,resolution[1])
-  Theta,Phi = np.meshgrid(Azimuth,Altitude)
+  Azimuth = np.linspace(-180  , 180  ,resolution[0])
+  Altitude = np.linspace(-90 , 90 ,resolution[1])
+  theta,phi = np.meshgrid(Azimuth,Altitude)
 
   # read in the maximum number of events to use
   maxNumEvents =  int( config['General']['max_num_events'] )
 
   # read imageable events from collision file
-  imageData , efficiency , unc = getImageDataFromCollisonFile(colFile, detectors, numLines=maxNumEvents, loud=True)
+  imageData , efficiency , unc = getImageDataFromCollisonFile(colFile, detectors, numLines=maxNumEvents, loud=loudPrint)
 
   # test a single cone
-  Z = np.zeros(resolution)
-  Z += addConeToImage(imageData[0] , Z)
-  plotZ(Z , 1)
-
-#  if maxNumEvents > len(imageableEvents):
-#    maxNumEvents = len(imageableEvents)
-
-#  imageMatrix = createImage(imageableEvents[0:maxNumEvents] , resolution=[200 , 200] )
+  #Z = np.zeros(resolution)
+  #Z += addConeToImage(imageData[0] , Z , theta , phi)
+  #plotZ(theta , phi , Z , 1 , sourceLocation=[stheta , sphi])
+  imageMatrix = createImage(imageData, res=resolution[:] , loud=loudPrint)
+  if loudPrint == True:
+    print( "\n")
+    print("Now plotting image \n")
+  plotZ(theta , phi , imageMatrix ,  len(imageData) , resolution, sourceLocation=[stheta , sphi] , sideHists=True)
 #  center , covarianceDeterminant , fwhmTheta , fwhmPhi = fitGaussianToImage( imageMatrix )
 #  entropy = getImageEntropy( imageMatrix )
 
