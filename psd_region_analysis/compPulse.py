@@ -22,8 +22,10 @@ def compPulses(pulses , regionNames , ns_per_sample):
     #plt.plot(time, pulse , label=str(region))
 
   plt.xlabel("Time [ns]")
+  plt.xlim(0,time[-1] + 0.25 * time[-1])
   plt.ylabel("Signal [V]")
-  plt.legend()
+  plt.legend(loc='upper right')
+  plt.tight_layout()
   plt.show()
 
 if __name__ == '__main__':

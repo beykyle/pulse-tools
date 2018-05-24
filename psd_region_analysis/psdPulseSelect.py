@@ -130,14 +130,16 @@ def readPulses(config):
 
   return(tail , total , ratio)
 
-def getPulsesFromBox(waves , ratioLim , totLim  ):
+def getPulsesFromBox(waves , ratioLim , totLim  , interactive=False):
   ratLow  = min(ratioLim)
   ratHigh = max(ratioLim)
   totLow   = min(totLim)
   totHigh  = max(totLim)
 
   goodWaves = []
-  numpulses = tryIntInput("How many pulses from this region do you want to plot?  ")
+  numpulses = 0
+  if interactive == True:
+    numpulses = tryIntInput("How many pulses from this region do you want to plot?  ")
 
   j = 0
   #for  wave in goodWaves:
@@ -156,7 +158,8 @@ def getPulsesFromBox(waves , ratioLim , totLim  ):
         plt.show()
         plt.close()
 
-  print("Got all " + str(len(goodWaves)) + " waves in the current region")
+  if interactive == True:
+    print("Got all " + str(len(goodWaves)) + " waves in the current region")
   return(goodWaves)
 
 def readGoodInd(fname):
@@ -314,6 +317,10 @@ if __name__ == '__main__':
   tailIntegralStart   = int(config['Pulse Processing']['tail_integral_start'])
   VperLSB =  dynamic_range_volts / ( 2**( number_of_bits) - 1)
 
+  bins = []
+  if 'template_energy_binning' in config['Region Analysis']:
+      bins =  float(config['Region Analysis']['template_energy_binning'])
+
   if len(sys.argv) > 2:
     loud = booleanize(sys.argv[2])
     chCount, timing , data , pulses = GetWaveData(configFileName , getWaves=True , loud=loud)
@@ -326,11 +333,15 @@ if __name__ == '__main__':
   goodPulses = []
   tail       = []
 
+  plotting = booleanize(config['Region Analysis']['plotting'])
+
   conversion = 1
-  units_x = 'Total Integral [V ns]'
+  label_x = 'Total Integral [V ns]'
+  units_x = '[V ns]'
   if  'integral_LO_conversion' in config['Pulse Processing']:
     conversion = float(config['Pulse Processing']['integral_LO_conversion'])
-    units_x = 'Light Output [MeVee]'
+    label_x = 'Light Output [MeVee]'
+    units_x = '[MeVee]'
 
 
   for pulse in pulses:
@@ -352,17 +363,17 @@ if __name__ == '__main__':
 
   # look at a region and get it's info
   while again == True:
-    xlim , ylim = scatterDensity(total , ratio , [ units_x ,  "Tail/Total"] )
+    xlim , ylim = scatterDensity(total , ratio , [ label_x ,  "Tail/Total"] )
     xmin , xmax = min(xlim) , max(xlim)
     ymin , ymax = min(ylim) , max(ylim)
 
-    totLim = [xmin , xmax]
-    totLim = [9.5 , 10]
+    #totLim = [xmin , xmax]
+    totLim = [0 , 20]
     ratioLim = [ymin , ymax]
     print("Selected area: Total: [" + str(totLim[0]) + " , " + str(totLim[1]) + "] " + units_x
                      + ", Ratio: [" + str(ratioLim[0]) + " , " + str(ratioLim[1]) + "]" )
 
-    region_pulses = getPulsesFromBox( goodPulses , ratioLim , totLim )
+    region_pulses = getPulsesFromBox( goodPulses , ratioLim , totLim , interactive=True)
     region_name = tryStrInput("What would you like to call this region? ")
     regions.append(region_name)
 
@@ -379,12 +390,34 @@ if __name__ == '__main__':
 
     getTemplate   = tryBoolInput("would you like to generate a template pulse for the region? [y/n] ")
     if getTemplate == True:
+      print( "Generating template pulse for the entire region")
       avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in region_pulses] )
                           * VperLSB * ns_per_sample )
       avPulses.append(avpulse)
       temp_regions.append(region_name)
       out = outPath + region_name + "template.out"
       writePulse(avpulse , out , 1 , totLim , ratioLim)
+
+      if bins != []:
+        print( "Generating template pulse for the sub region by energy slice")
+        sub_region_names = []
+        sub_avPulses = []
+        bins = np.linspace( totLim[0] , totLim[1] , int(totLim[1] - totLim[0] / bins)  )
+
+        for i in range(len(bins[:-1])):
+          low = bins[i]
+          high =  bins[i+1]
+          sub_region_pulses = getPulsesFromBox( goodPulses , ratioLim , [low , high] )
+          if sub_region_pulses != []:
+            sub_avpulse = np.array( readAndAveragePulses( pulses=[p.blsSamples for p in sub_region_pulses] )
+                              * VperLSB * ns_per_sample )
+            sub_avPulses.append(sub_avpulse)
+            sub_region_names.append( '{:01.2f}'.format(low) + "-" + '{:01.2f}'.format(high) + " " + units_x )
+            out = outPath + region_name + sub_region_names[-1] + "template.out"
+            writePulse(sub_avpulse , out , 1.0 , [low , high] , ratioLim)
+
+        if plotting == True:
+          compPulses(sub_avPulses , sub_region_names , ns_per_sample )
 
     getDoubleFrac = tryBoolInput("would you like to calculate the double pulse fraction for the region? [y/n] ")
     if getDoubleFrac == True:
@@ -408,6 +441,6 @@ if __name__ == '__main__':
     again = tryBoolInput("Would you like to select another region? [y/n]")
     print("\r\n")
 
-  if regions != [] and avPulses != []:
+  if regions != [] and avPulses != [] and plotting == True:
     print("\r\n Comparing pulse templates in each region")
     compPulses( avPulses , temp_regions , ns_per_sample )

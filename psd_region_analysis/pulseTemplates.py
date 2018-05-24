@@ -32,7 +32,6 @@ def readAndAveragePulses(*args, **kwargs):
       plt.semilogy(range(0,len(a)) ,a)
       plt.draw()
       plt.pause(0.05)
-
   av = np.array(len(pulses[0]))
   norm = len(pulses)
   for pulse in pulses:
