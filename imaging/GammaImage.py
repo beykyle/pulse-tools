@@ -189,7 +189,7 @@ def getPositionFromDetector( detector , x , y , z):
   unc = [ detector.xdev , detector.ydev , detector.zdev]
   return(pos , unc)
 
-def unitProjection( pos1 , pos2 , un1=0 , un2=0 , centerVec=[0,1,0] , error=False):
+def unitProjection( pos1 , pos2 , un1=0 , un2=0 , error=False):
   """
   Given two positions in R^3 and their associated uncertainties, unitProjection
   projects the unit vector along the axis between their uncertainties onto the unit
@@ -358,9 +358,7 @@ def getImageDataFromCollisonFile( collisionFile , detectors , numLines=1000 , lo
 
       # get projecion of unit vector bt scattering events onto unti sphere {theta,phi}
       # as well as analytically propagated uncertainties
-      theta, phi , deltaTheta , deltaPhi  = unitProjection( pos1 , pos2 , un1=unc1 , un2=unc2 ,
-                                                            centerVec , error=True
-                                                          )
+      theta, phi , deltaTheta , deltaPhi  = unitProjection( pos1 , pos2 , un1=unc1 , un2=unc2 , error=True)
 
       # check if it is a scatter -> scatter or scatter -> capture event
       # and if so, if the second energy deposited is above the cutoff for its detector
@@ -580,8 +578,8 @@ def plotZ(Theta, Phi, Z, counter , resolution  , sourceLocation=[0,0] , sideHist
 
     axScatter = plt.axes(rect_scatter)
     axScatter.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
-    axScatter.set_xlabel(r"Azimuthal Angle [$\Theta$]")
-    axScatter.set_ylabel(r"Altitude Angle [$\Phi$]")
+    axScatter.set_xlabel(r"Azimuthal Angle [$\theta$]")
+    axScatter.set_ylabel(r"Altitude Angle [$\phi$]")
     axScatter.set_xlim(-180 , 180 )
     axScatter.set_ylim(-90 , 90 )
     axScatter.scatter( sourceLocation[0] , sourceLocation[1]  , s=50 , facecolors='none',
@@ -594,7 +592,13 @@ def plotZ(Theta, Phi, Z, counter , resolution  , sourceLocation=[0,0] , sideHist
     Azimuth = np.linspace(-180  , 180  ,resolution[0])
     Altitude = np.linspace(-90 , 90 ,resolution[1])
     thetaDist = np.sum(Z , axis=0)
+    thetaDist = thetaDist / np.sum(thetaDist)
     phiDist   = np.sum(Z , axis=1)
+    phiDist   = phiDist / np.sum(phiDist)
+
+    adjustment = (max(phiDist) - min(phiDist))*0.05
+    axHistx.set_ylim(min(thetaDist) , max(thetaDist)*1.1 )
+    axHisty.set_xlim( min(phiDist) + adjustment , max(phiDist)*1.1 )
 
     # get max theta , phi
     thetaMax , phiMax = Azimuth[ np.argmax(thetaDist) ] , Altitude[ np.argmax(phiDist) ]
@@ -603,7 +607,7 @@ def plotZ(Theta, Phi, Z, counter , resolution  , sourceLocation=[0,0] , sideHist
     axHistx.plot( Azimuth   , thetaDist  , linewidth=3 )
     axHisty.plot( phiDist   , Altitude   , linewidth=3 )
     axHistx.fill_between( Azimuth   , thetaDist ,  facecolor='b')
-    axHisty.fill_between( phiDist   , Altitude  ,  facecolor='b')
+    axHisty.fill_between( np.append( phiDist , 0)   , np.append( Altitude , 0)  ,  facecolor='b')
 
     # plot crosshairs over centers of the distribution
     axHisty.plot( [0, max(phiDist)] , [ phiMax , phiMax ] , 'r--'   )
@@ -614,8 +618,8 @@ def plotZ(Theta, Phi, Z, counter , resolution  , sourceLocation=[0,0] , sideHist
   else:
     plt.title("Cones: "+str(counter))
     plt.pcolormesh(Theta,Phi,Z, cmap='jet') #http://matplotlib.org/users/colormaps.html
-    plt.set_xlabel(r"Azimuthal Angle [$\Theta$]")
-    plt.set_ylabel(r"Altitude Angle [$\Phi$]")
+    plt.set_xlabel(r"Azimuthal Angle [$\theta$]")
+    plt.set_ylabel(r"Altitude Angle [$\phi$]")
     plt.set_xlim(-180 , 180 )
     plt.set_ylim(-90 , 90 )
     plt.scatter( sourceLocation[0] , sourceLocation[1]  , s=50 , facecolors='none',
@@ -635,10 +639,13 @@ def writeOut(Z , fname):
 
 def addConeToImage( e , Z, theta , phi):
   # analytically calculated variance
-  var  = 500000
+  avar  =  4 * e.angle**2 *  e.deltaAngle**2
+  newmat = np.exp(  -( e.angle**2- (theta - e.theta)**2 - (phi - e.phi)**2)**2 /
+                      ( avar + 4 * (theta - e.theta)**2 * e.deltaTheta**2 +
+                              4 * (phi - e.phi)**2 * e.deltaPhi**2 )
+                 )
   # analytically calculated normalizing factor
-  norm = 1
-  Z += norm * np.exp(  -( e.angle**2- (theta - e.theta)**2 - (phi - e.phi)**2)**2 / var  )
+  Z += newmat
   return(Z)
 
 def createImage( imageableEvents , res=[1000,1000] , loud=False ):
@@ -707,9 +714,10 @@ if __name__ == '__main__':
   imageData , efficiency , unc = getImageDataFromCollisonFile(colFile, detectors, numLines=maxNumEvents, loud=loudPrint)
 
   # test a single cone
-  #Z = np.zeros(resolution)
-  #Z += addConeToImage(imageData[0] , Z , theta , phi)
-  #plotZ(theta , phi , Z , 1 , sourceLocation=[stheta , sphi])
+  Z = np.zeros(resolution)
+  Z += addConeToImage(imageData[0] , Z , theta , phi)
+  plotZ(theta , phi , Z , 1 , resolution,sourceLocation=[stheta , sphi] , sideHists=True)
+
   imageMatrix = createImage(imageData, res=resolution[:] , loud=loudPrint)
   if loudPrint == True:
     print( "\n")
